@@ -155,8 +155,8 @@ Distributed under the GNU GPL v3 License. See `LICENSE` for more information.
 ## 📝 Changelog
 
 **v0.4.1**
-- Improve GSM/2G Downgrade Attack
-- improve A5/0 Cipher Attack
+- Improve blocking GSM/2G Downgrade Attack
+- improve blocking A5/0 Cipher Attack
 
 **v0.4.0**
 - **Advanced Panic Mode & Recovery System:**
