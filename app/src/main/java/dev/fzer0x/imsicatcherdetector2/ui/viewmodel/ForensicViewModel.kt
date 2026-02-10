@@ -518,10 +518,66 @@ class ForensicViewModel(application: Application) : AndroidViewModel(application
     fun updateBeaconDbKey(key: String) { _settings.update { it.copy(beaconDbKey = key) }; encryptedPrefs.edit { putString("beacon_db_key", key) } }
     fun updateOpenCellIdKey(key: String) { _settings.update { it.copy(openCellIdKey = key) }; encryptedPrefs.edit { putString("open_cell_id_key", key) } }
     fun updateUseOpenCellId(value: Boolean) { _settings.update { it.copy(useOpenCellId = value) }; prefs.edit { putBoolean("use_open_cell_id", value) } }
-    fun updateBlockGsm(value: Boolean) { _settings.update { it.copy(blockGsm = value) }; prefs.edit { putBoolean("block_gsm", value) }; getApplication<Application>().sendBroadcast(Intent("dev.fzer0x.imsicatcherdetector2.SETTINGS_CHANGED").apply { putExtra("blockGsm", value); putExtra("reject_a50", _settings.value.rejectA50) }) }
-    fun updateRejectA50(value: Boolean) { _settings.update { it.copy(rejectA50 = value) }; prefs.edit { putBoolean("reject_a50", value) }; getApplication<Application>().sendBroadcast(Intent("dev.fzer0x.imsicatcherdetector2.SETTINGS_CHANGED").apply { putExtra("blockGsm", _settings.value.blockGsm); putExtra("reject_a50", value) }) }
+    fun updateBlockGsm(value: Boolean) { 
+        _settings.update { it.copy(blockGsm = value) }; 
+        prefs.edit { putBoolean("block_gsm", value) }; 
+        getApplication<Application>().sendBroadcast(Intent("dev.fzer0x.imsicatcherdetector2.SETTINGS_CHANGED").apply { putExtra("blockGsm", value); putExtra("reject_a50", _settings.value.rejectA50) })
+        
+        // Hardware-level GSM blocking via sentry-ctl
+        if (_dashboardState.value.isHardeningModuleActive) {
+            viewModelScope.launch {
+                try {
+                    var result = RootRepository.execute("sentry-ctl --block-2g ${if (value) "true" else "false"}")
+                    if (!result.success) {
+                        result = RootRepository.execute("/data/adb/modules/sentry_radio_hardening/system/bin/sentry-ctl --block-2g ${if (value) "true" else "false"}")
+                    }
+                    _syncStatus.emit("Hardware GSM Blocking ${if (value) "enabled" else "disabled"}: ${if (result.success) "Success" else "Failed"}")
+                } catch (e: Exception) {
+                    _syncStatus.emit("Hardware GSM Blocking error: ${e.message}")
+                }
+            }
+        }
+    }
+    fun updateRejectA50(value: Boolean) { 
+        _settings.update { it.copy(rejectA50 = value) }; 
+        prefs.edit { putBoolean("reject_a50", value) }; 
+        getApplication<Application>().sendBroadcast(Intent("dev.fzer0x.imsicatcherdetector2.SETTINGS_CHANGED").apply { putExtra("blockGsm", _settings.value.blockGsm); putExtra("reject_a50", value) })
+        
+        // Hardware-level A5/0 cipher rejection via sentry-ctl
+        if (_dashboardState.value.isHardeningModuleActive) {
+            viewModelScope.launch {
+                try {
+                    var result = RootRepository.execute("sentry-ctl --reject-a50 ${if (value) "true" else "false"}")
+                    if (!result.success) {
+                        result = RootRepository.execute("/data/adb/modules/sentry_radio_hardening/system/bin/sentry-ctl --reject-a50 ${if (value) "true" else "false"}")
+                    }
+                    _syncStatus.emit("Hardware A5/0 Rejection ${if (value) "enabled" else "disabled"}: ${if (result.success) "Success" else "Failed"}")
+                } catch (e: Exception) {
+                    _syncStatus.emit("Hardware A5/0 Rejection error: ${e.message}")
+                }
+            }
+        }
+    }
     fun updateMarkFakeCells(value: Boolean) { _settings.update { it.copy(markFakeCells = value) }; prefs.edit { putBoolean("mark_fake_cells", value) } }
-    fun updateForceLte(value: Boolean) { _settings.update { it.copy(forceLte = value) }; prefs.edit { putBoolean("force_lte", value) } }
+    fun updateForceLte(value: Boolean) { 
+        _settings.update { it.copy(forceLte = value) }; 
+        prefs.edit { putBoolean("force_lte", value) }
+        
+        // Hardware-level LTE forcing via sentry-ctl
+        if (_dashboardState.value.isHardeningModuleActive) {
+            viewModelScope.launch {
+                try {
+                    var result = RootRepository.execute("sentry-ctl --force-lte ${if (value) "true" else "false"}")
+                    if (!result.success) {
+                        result = RootRepository.execute("/data/adb/modules/sentry_radio_hardening/system/bin/sentry-ctl --force-lte ${if (value) "true" else "false"}")
+                    }
+                    _syncStatus.emit("Hardware LTE Forcing ${if (value) "enabled" else "disabled"}: ${if (result.success) "Success" else "Failed"}")
+                } catch (e: Exception) {
+                    _syncStatus.emit("Hardware LTE Forcing error: ${e.message}")
+                }
+            }
+        }
+    }
     fun updateAutoMitigation(value: Boolean) { _settings.update { it.copy(autoMitigation = value) }; prefs.edit { putBoolean("auto_mitigation", value) }; getApplication<Application>().sendBroadcast(Intent("dev.fzer0x.imsicatcherdetector2.SETTINGS_CHANGED").apply { putExtra("autoMitigation", value) }) }
     fun updateZeroDayProtection(value: Boolean) { _settings.update { it.copy(zeroDayProtection = value) }; prefs.edit { putBoolean("zero_day_protection", value) }
         if (_dashboardState.value.isHardeningModuleActive) {

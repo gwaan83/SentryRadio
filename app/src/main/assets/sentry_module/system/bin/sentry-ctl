@@ -146,6 +146,9 @@ case $COMMAND in
     "--block-2g")
         setprop persist.radio.block_gsm $([ "$VALUE" == "true" ] && echo 1 || echo 0)
         ;;
+    "--reject-a50")
+        setprop persist.radio.reject_a50 $([ "$VALUE" == "true" ] && echo 1 || echo 0)
+        ;;
     "--telemetry")
         echo "--- Snapdragon Modem Telemetry ---"
         # Get encryption algorithm
@@ -338,11 +341,12 @@ case $COMMAND in
         echo "Modem power: $(getprop persist.vendor.radio.modem_power)"
         echo "GSM blocked: $(getprop persist.radio.block_gsm)"
         echo "LTE blocked: $(getprop persist.radio.block_lte)"
+        echo "A5/0 rejected: $(getprop persist.radio.reject_a50)"
         # Check service status
         echo "RIL daemon status: $(getprop init.svc.ril-daemon)"
         log_action "Validation complete"
         ;;
     *)
-        echo "Usage: sentry-ctl [--force-lte|--reset-radio|--panic|--panic-extended|--block-2g|--telemetry|--fingerprint|--status|--monitor-modem|--geo-protect|--forensic-dump|--zero-day-protect|--hard-shutdown|--validate-panic|--recover]"
+        echo "Usage: sentry-ctl [--force-lte|--reset-radio|--panic|--panic-extended|--block-2g|--reject-a50|--telemetry|--fingerprint|--status|--monitor-modem|--geo-protect|--forensic-dump|--zero-day-protect|--hard-shutdown|--validate-panic|--recover]"
         ;;
 esac
