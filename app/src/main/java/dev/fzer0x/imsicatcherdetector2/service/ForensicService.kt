@@ -41,6 +41,7 @@ class ForensicService : Service() {
     private var blockGsm = false
     private var rejectA50 = false
     private var autoMitigation = false
+    private var extendedPanicMode = false
     private var isHardeningModuleActive = false
 
     private val processedCriticalAlerts = mutableMapOf<String, Long>()
@@ -148,6 +149,7 @@ class ForensicService : Service() {
             blockGsm = prefs.getBoolean("block_gsm", false)
             rejectA50 = prefs.getBoolean("reject_a50", false)
             autoMitigation = prefs.getBoolean("auto_mitigation", false)
+            extendedPanicMode = prefs.getBoolean("extended_panic_mode", false)
         } catch (_: Exception) {}
     }
 
@@ -160,8 +162,17 @@ class ForensicService : Service() {
         
         serviceScope.launch {
             if (critical) {
-                Log.e(TAG, "AUTO-MITIGATION: CRITICAL THREAT ($reason). Activating PANIC MODE.")
-                RootRepository.execute("sentry-ctl --panic")
+                Log.e(TAG, "AUTO-MITIGATION: CRITICAL THREAT ($reason). Activating EXTENDED PANIC MODE.")
+                if (extendedPanicMode) {
+                    // Extended Panic Mode mit voller Network Isolation
+                    RootRepository.execute("sentry-ctl --panic-extended")
+                    // Zusätzliche Hardware-Shutdown Befehle
+                    RootRepository.execute("sentry-ctl --hard-shutdown")
+                    Log.i(TAG, "Extended Panic Mode with hardware shutdown executed")
+                } else {
+                    // Standard Panic Mode
+                    RootRepository.execute("sentry-ctl --panic")
+                }
             } else {
                 Log.w(TAG, "AUTO-MITIGATION: Threat detected ($reason). Resetting radio.")
                 RootRepository.execute("sentry-ctl --reset-radio")

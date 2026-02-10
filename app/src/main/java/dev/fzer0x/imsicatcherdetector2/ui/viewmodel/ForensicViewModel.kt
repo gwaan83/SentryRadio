@@ -565,17 +565,84 @@ class ForensicViewModel(application: Application) : AndroidViewModel(application
             }
         }
     }
-    fun resetRadio() { viewModelScope.launch { if (_dashboardState.value.hasRoot) { RootRepository.execute("sentry-ctl --reset-radio"); _syncStatus.emit("Radio Reset command sent") } } }
+    fun resetRadio() { viewModelScope.launch { if (_dashboardState.value.hasRoot) { 
+        var result = RootRepository.execute("sentry-ctl --reset-radio")
+        if (!result.success) {
+            result = RootRepository.execute("/data/adb/modules/sentry_radio_hardening/system/bin/sentry-ctl --reset-radio")
+        }
+        _syncStatus.emit("Radio Reset command sent") 
+    } } }
     fun triggerPanic() { viewModelScope.launch { if (_dashboardState.value.hasRoot) { 
         if (_settings.value.extendedPanicMode) {
-            RootRepository.execute("sentry-ctl --panic-extended")
+            // Extended Panic Mode mit verbesserter Implementierung
+            var result = RootRepository.execute("sentry-ctl --panic-extended")
+            if (!result.success) {
+                result = RootRepository.execute("/data/adb/modules/sentry_radio_hardening/system/bin/sentry-ctl --panic-extended")
+            }
             _syncStatus.emit("EXTENDED PANIC MODE ACTIVATED")
+            
+            // Zusätzliche Hardware-Shutdown Befehle
+            var hardShutdown = RootRepository.execute("sentry-ctl --hard-shutdown")
+            if (!hardShutdown.success) {
+                hardShutdown = RootRepository.execute("/data/adb/modules/sentry_radio_hardening/system/bin/sentry-ctl --hard-shutdown")
+            }
+            _syncStatus.emit("Hardware radio shutdown executed")
+            
+            // Validierung nach 2 Sekunden
+            kotlinx.coroutines.delay(2000)
+            var validation = RootRepository.execute("sentry-ctl --validate-panic")
+            if (!validation.success) {
+                validation = RootRepository.execute("/data/adb/modules/sentry_radio_hardening/system/bin/sentry-ctl --validate-panic")
+            }
+            if (validation.success) {
+                _syncStatus.emit("PANIC VALIDATION: ${validation.output}")
+            } else {
+                _syncStatus.emit("PANIC VALIDATION FAILED: ${validation.error}")
+            }
         } else {
-            RootRepository.execute("sentry-ctl --panic")
+            var result = RootRepository.execute("sentry-ctl --panic")
+            if (!result.success) {
+                result = RootRepository.execute("/data/adb/modules/sentry_radio_hardening/system/bin/sentry-ctl --panic")
+            }
             _syncStatus.emit("PANIC MODE ACTIVATED")
         }
     } } }
-    fun triggerForensicDump() { viewModelScope.launch { if (_dashboardState.value.hasRoot && _dashboardState.value.isHardeningModuleActive) { 
+    fun recoverFromPanic() { viewModelScope.launch { 
+    if (_dashboardState.value.hasRoot && _dashboardState.value.isHardeningModuleActive) {
+        var recovery = RootRepository.execute("sentry-ctl --recover")
+        if (!recovery.success) {
+            recovery = RootRepository.execute("/data/adb/modules/sentry_radio_hardening/system/bin/sentry-ctl --recover")
+        }
+        
+        if (recovery.success) {
+            _syncStatus.emit("RECOVERY SUCCESSFUL:\n${recovery.output}")
+        } else {
+            _syncStatus.emit("RECOVERY FAILED: ${recovery.error}")
+        }
+    } else {
+        _syncStatus.emit("Recovery requires root and hardening module")
+    }
+} }
+    
+fun validatePanicMode() { viewModelScope.launch { 
+    if (_dashboardState.value.hasRoot && _dashboardState.value.isHardeningModuleActive) {
+        // Versuche zuerst über PATH, dann über vollen Pfad
+        var validation = RootRepository.execute("sentry-ctl --validate-panic")
+        if (!validation.success) {
+            validation = RootRepository.execute("/data/adb/modules/sentry_radio_hardening/system/bin/sentry-ctl --validate-panic")
+        }
+        
+        if (validation.success) {
+            _syncStatus.emit("PANIC VALIDATION SUCCESSFUL:\n${validation.output}")
+        } else {
+            _syncStatus.emit("PANIC VALIDATION FAILED: ${validation.error}")
+        }
+    } else {
+        _syncStatus.emit("Validation requires root and hardening module")
+    }
+} }
+    
+fun triggerForensicDump() { viewModelScope.launch { if (_dashboardState.value.hasRoot && _dashboardState.value.isHardeningModuleActive) { 
         RootRepository.execute("sentry-ctl --forensic-dump")
         _syncStatus.emit("Forensic dump completed")
     } else {

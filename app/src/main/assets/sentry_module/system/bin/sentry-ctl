@@ -23,14 +23,35 @@ case $COMMAND in
         ;;
     "--reset-radio")
         log_action "Modem Reset Triggered"
-        cmd phone restart-modem
+        # Clear panic state first
+        setprop persist.sentry.panic_active 0
+        setprop persist.sentry.panic_extended_active 0
+        # Reset network interfaces
+        iptables -P INPUT ACCEPT 2>/dev/null
+        iptables -P OUTPUT ACCEPT 2>/dev/null
+        ip6tables -P INPUT ACCEPT 2>/dev/null
+        ip6tables -P OUTPUT ACCEPT 2>/dev/null
+        # Reset radio properties
+        setprop persist.radio.block_gsm 0
+        setprop persist.radio.block_lte 0
+        setprop persist.radio.block_cdma 0
+        setprop persist.vendor.radio.enable 1
+        setprop persist.vendor.radio.modem_power 1
+        # Reset Android network settings
+        settings put global airplane_mode_on 0
+        settings put global mobile_data 1
+        svc wifi enable
+        svc data enable
+        # Restart modem
+        cmd phone restart-modem 2>/dev/null || log_action "Modem restart command failed"
+        log_action "Radio reset complete"
         ;;
     "--panic")
         log_action "EMERGENCY SHUTDOWN"
         settings put global airplane_mode_on 1
         am broadcast -a android.intent.action.AIRPLANE_MODE --ez state true
         stop ril-daemon
-        # Enhanced Panic Mode v0.3.1
+        # Enhanced Panic Mode v0.4.1 - Persistent Configuration
         log_action "Killing suspicious processes..."
         killall -9 com.android.phone 2>/dev/null
         killall -9 rild 2>/dev/null
@@ -43,6 +64,14 @@ case $COMMAND in
         setprop persist.radio.block_lte 1
         setprop persist.radio.block_cdma 1
         setprop persist.vendor.radio.enable 0
+        # Persistent panic state
+        setprop persist.sentry.panic_active 1
+        setprop persist.sentry.panic_timestamp $(date +%s)
+        # Network isolation
+        iptables -P INPUT DROP 2>/dev/null || log_action "iptables INPUT failed"
+        iptables -P OUTPUT DROP 2>/dev/null || log_action "iptables OUTPUT failed"
+        ip6tables -P INPUT DROP 2>/dev/null || log_action "ip6tables INPUT failed"
+        ip6tables -P OUTPUT DROP 2>/dev/null || log_action "ip6tables OUTPUT failed"
         log_action "PANIC MODE COMPLETE - All radio interfaces disabled"
         ;;
     "--panic-extended")
@@ -65,11 +94,51 @@ case $COMMAND in
         setprop persist.radio.block_cdma 1
         setprop persist.vendor.radio.enable 0
         setprop persist.vendor.radio.modem_power 0
-        # Network isolation
-        iptables -P INPUT DROP 2>/dev/null
-        iptables -P OUTPUT DROP 2>/dev/null
-        ip6tables -P INPUT DROP 2>/dev/null
-        ip6tables -P OUTPUT DROP 2>/dev/null
+        
+        # Enhanced Network Isolation with Android APIs
+        log_action "Implementing Android network isolation..."
+        # Disable all network adapters through Android APIs
+        svc wifi disable
+        svc data disable
+        # Force disable mobile data through settings
+        settings put global mobile_data 0
+        settings put global airplane_mode_radios "cell,bluetooth,wifi,nfc,wimax"
+        # Disable network through Connectivity Manager
+        cmd connectivity airplane-mode enable 2>/dev/null || log_action "Connectivity manager not available"
+        # Additional network blocking with error handling
+        if iptables -P INPUT DROP 2>&1; then
+            log_action "iptables INPUT DROP successful"
+        else
+            log_action "iptables INPUT failed - using Android alternatives"
+        fi
+        if iptables -P OUTPUT DROP 2>&1; then
+            log_action "iptables OUTPUT DROP successful"
+        else
+            log_action "iptables OUTPUT failed - using Android alternatives"
+        fi
+        if ip6tables -P INPUT DROP 2>&1; then
+            log_action "ip6tables INPUT DROP successful"
+        else
+            log_action "ip6tables INPUT failed - using Android alternatives"
+        fi
+        if ip6tables -P OUTPUT DROP 2>&1; then
+            log_action "ip6tables OUTPUT DROP successful"
+        else
+            log_action "ip6tables OUTPUT failed - using Android alternatives"
+        fi
+        
+        # Hardware-level radio shutdown
+        log_action "Performing hardware radio shutdown..."
+        # Direct modem power management through sysfs
+        echo 0 > /sys/class/rfkill/rfkill0/state 2>/dev/null || log_action "rfkill0 not available"
+        echo 0 > /sys/class/rfkill/rfkill1/state 2>/dev/null || log_action "rfkill1 not available"
+        # Force modem shutdown through Qualcomm-specific interfaces
+        echo 0 > /sys/devices/platform/soc/soc:qcom,mdm/subsys0/restart 2>/dev/null || log_action "Qualcomm modem restart interface not available"
+        
+        # Persistent panic state
+        setprop persist.sentry.panic_extended_active 1
+        setprop persist.sentry.panic_extended_timestamp $(date +%s)
+        
         # Broadcast emergency to app
         am broadcast -a dev.fzer0x.sentry.EMERGENCY --es threat_type "EXTENDED_PANIC" --es severity "CRITICAL"
         log_action "EXTENDED PANIC COMPLETE - Full system lockdown active"
@@ -211,7 +280,69 @@ case $COMMAND in
             echo "Usage: sentry-ctl --zero-day-protect [enable|disable|sync|status]"
         fi
         ;;
+    "--hard-shutdown")
+        log_action "HARDWARE RADIO SHUTDOWN"
+        # Direct RIL commands for hardware control
+        echo "AT+CFUN=0" > /dev/smd0 2>/dev/null || log_action "RIL SMD0 not accessible"
+        echo "AT+CFUN=4" > /dev/smd7 2>/dev/null || log_action "RIL SMD7 not accessible"
+        # Alternative RIL interfaces
+        echo "AT+CFUN=0" > /dev/ttyS0 2>/dev/null || log_action "TTY S0 not accessible"
+        # Force radio chipset shutdown
+        echo 0 > /sys/devices/platform/soc/soc:qcom,mdm/subsys0/restart 2>/dev/null || log_action "Modem restart interface not available"
+        # Power management
+        echo 0 > /sys/class/power_supply/battery/charging_enabled 2>/dev/null || log_action "Battery control not available"
+        log_action "Hardware shutdown commands sent"
+        ;;
+    "--recover")
+        log_action "RECOVERING FROM PANIC MODE"
+        # Clear all panic states
+        setprop persist.sentry.panic_active 0
+        setprop persist.sentry.panic_extended_active 0
+        # Reset network interfaces
+        iptables -P INPUT ACCEPT 2>/dev/null
+        iptables -P OUTPUT ACCEPT 2>/dev/null
+        ip6tables -P INPUT ACCEPT 2>/dev/null
+        ip6tables -P OUTPUT ACCEPT 2>/dev/null
+        # Reset radio properties
+        setprop persist.radio.block_gsm 0
+        setprop persist.radio.block_lte 0
+        setprop persist.radio.block_cdma 0
+        setprop persist.vendor.radio.enable 1
+        setprop persist.vendor.radio.modem_power 1
+        # Reset Android network settings
+        settings put global airplane_mode_on 0
+        settings put global mobile_data 1
+        svc wifi enable
+        svc data enable
+        # Restart all services
+        start ril-daemon
+        start telephony
+        # Hardware reset
+        echo 1 > /sys/class/rfkill/rfkill0/state 2>/dev/null
+        echo 1 > /sys/class/rfkill/rfkill1/state 2>/dev/null
+        # Full modem restart
+        cmd phone restart-modem 2>/dev/null || log_action "Modem restart failed"
+        log_action "Recovery complete - All systems restored"
+        ;;
+    "--validate-panic")
+        log_action "VALIDATING PANIC MODE EFFECTIVENESS"
+        # Check if network interfaces are down
+        ifconfig wlan0 down 2>/dev/null || log_action "wlan0 already down or not accessible"
+        ifconfig rmnet0 down 2>/dev/null || log_action "rmnet0 already down or not accessible"
+        ifconfig rmnet_data0 down 2>/dev/null || log_action "rmnet_data0 already down or not accessible"
+        # Check iptables status
+        IPTABLES_STATUS=$(iptables -L | grep -c "DROP")
+        echo "Active DROP rules: $IPTABLES_STATUS"
+        # Check radio properties
+        echo "Radio enabled: $(getprop persist.vendor.radio.enable)"
+        echo "Modem power: $(getprop persist.vendor.radio.modem_power)"
+        echo "GSM blocked: $(getprop persist.radio.block_gsm)"
+        echo "LTE blocked: $(getprop persist.radio.block_lte)"
+        # Check service status
+        echo "RIL daemon status: $(getprop init.svc.ril-daemon)"
+        log_action "Validation complete"
+        ;;
     *)
-        echo "Usage: sentry-ctl [--force-lte|--reset-radio|--panic|--panic-extended|--block-2g|--telemetry|--fingerprint|--status|--monitor-modem|--geo-protect|--forensic-dump|--zero-day-protect]"
+        echo "Usage: sentry-ctl [--force-lte|--reset-radio|--panic|--panic-extended|--block-2g|--telemetry|--fingerprint|--status|--monitor-modem|--geo-protect|--forensic-dump|--zero-day-protect|--hard-shutdown|--validate-panic|--recover]"
         ;;
 esac

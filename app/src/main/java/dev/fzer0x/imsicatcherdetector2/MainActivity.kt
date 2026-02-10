@@ -531,6 +531,16 @@ fun SecurityScreen(viewModel: ForensicViewModel) {
                         Spacer(Modifier.width(8.dp))
                         Text("PANIC MODE", color = Color.Red, fontSize = 10.sp)
                     }
+                    Button(
+                        onClick = { viewModel.recoverFromPanic() },
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E1E1E)),
+                        border = BorderStroke(1.dp, Color.Green)
+                    ) {
+                        Icon(Icons.Default.Refresh, contentDescription = null, tint = Color.Green, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("RESET WLAN", color = Color.Green, fontSize = 10.sp)
+                    }
                 }
                 Spacer(Modifier.height(24.dp))
             }
