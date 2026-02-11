@@ -58,7 +58,11 @@ data class UserSettings(
     val geoFencingProtection: Boolean = false,
     val advancedTelemetry: Boolean = false,
     val extendedPanicMode: Boolean = false,
-    val realTimeModemMonitoring: Boolean = false
+    val realTimeModemMonitoring: Boolean = false,
+    // 5G/SA Settings
+    val force5gSa: Boolean = false,
+    val force5gNsa: Boolean = false,
+    val enable5gMonitoring: Boolean = true
 )
 
 data class SimState(
@@ -78,7 +82,25 @@ data class SimState(
     val rrcStatus: String = "N/A",
     val modemSnr: String = "N/A",
     val modemTemp: String = "N/A",
-    val timingAdvance: Int? = null
+    val timingAdvance: Int? = null,
+    // 5G/SA specific fields
+    val is5gSa: Boolean = false,
+    val is5gNsa: Boolean = false,
+    val nrArfcn: String = "---",
+    val nrBand: String = "---",
+    val nrState: String = "---",
+    val nrDuplexMode: String = "---",
+    val nrMmWaveBand: Boolean = false,
+    val nrScs: String = "---",
+    val nrRsrp: String = "---",
+    val nrRsrq: String = "---",
+    val nrSinr: String = "---",
+    val nrCsiRsrp: String = "---",
+    val nrCsiRsrq: String = "---",
+    val nrCsiSinr: String = "---",
+    val nrSsbRsrp: String = "---",
+    val nrSsbRsrq: String = "---",
+    val nrSsbSinr: String = "---"
 )
 
 data class DashboardState(
@@ -194,17 +216,196 @@ class ForensicViewModel(application: Application) : AndroidViewModel(application
         if (simLogs.isEmpty()) return current
         val latestCell = simLogs.firstOrNull { it.cellId != null }
         val signalHistory = simLogs.filter { it.signalStrength != null }.map { it.signalStrength!! }.take(20).reversed()
+        
+        // Enhanced 5G/SA detection
+        val networkType = latestCell?.networkType ?: current.networkType
+        val is5gSa = detect5gStandalone(simLogs, networkType)
+        val is5gNsa = detect5gNonStandalone(simLogs, networkType)
+        
         return current.copy(
-            currentCellId = latestCell?.cellId ?: current.currentCellId, mcc = latestCell?.mcc ?: current.mcc, mnc = latestCell?.mnc ?: current.mnc,
-            lac = latestCell?.lac?.toString() ?: current.lac, tac = latestCell?.tac?.toString() ?: current.tac,
+            currentCellId = latestCell?.cellId ?: current.currentCellId, 
+            mcc = latestCell?.mcc ?: current.mcc, 
+            mnc = latestCell?.mnc ?: current.mnc,
+            lac = latestCell?.lac?.toString() ?: current.lac, 
+            tac = latestCell?.tac?.toString() ?: current.tac,
             pci = simLogs.firstOrNull { it.pci != null && it.pci != -1 }?.pci?.toString() ?: current.pci,
             earfcn = simLogs.firstOrNull { it.earfcn != null && it.earfcn != -1 }?.earfcn?.toString() ?: current.earfcn,
-            networkType = latestCell?.networkType ?: current.networkType, neighborCount = latestCell?.neighborCount ?: current.neighborCount,
+            networkType = enhanceNetworkType(networkType, is5gSa, is5gNsa), 
+            neighborCount = latestCell?.neighborCount ?: current.neighborCount,
             signalStrength = simLogs.firstOrNull { it.signalStrength != null }?.signalStrength ?: current.signalStrength,
             isCipheringActive = !simLogs.any { it.type == EventType.CIPHERING_OFF && (System.currentTimeMillis() - it.timestamp < 600000) },
             rssiHistory = signalHistory,
-            timingAdvance = simLogs.firstOrNull { it.timingAdvance != null && it.timingAdvance != -1 }?.timingAdvance
+            timingAdvance = simLogs.firstOrNull { it.timingAdvance != null && it.timingAdvance != -1 }?.timingAdvance,
+            // 5G/SA specific updates
+            is5gSa = is5gSa,
+            is5gNsa = is5gNsa,
+            nrArfcn = extractNrArfcn(simLogs) ?: current.nrArfcn,
+            nrBand = extractNrBand(simLogs) ?: current.nrBand,
+            nrState = extractNrState(simLogs) ?: current.nrState,
+            nrDuplexMode = extractNrDuplexMode(simLogs) ?: current.nrDuplexMode,
+            nrMmWaveBand = detectMmWaveBand(simLogs) ?: current.nrMmWaveBand,
+            nrScs = extractNrScs(simLogs) ?: current.nrScs,
+            nrRsrp = extractNrMetric(simLogs, "rsrp") ?: current.nrRsrp,
+            nrRsrq = extractNrMetric(simLogs, "rsrq") ?: current.nrRsrq,
+            nrSinr = extractNrMetric(simLogs, "sinr") ?: current.nrSinr,
+            nrCsiRsrp = extractNrMetric(simLogs, "csi_rsrp") ?: current.nrCsiRsrp,
+            nrCsiRsrq = extractNrMetric(simLogs, "csi_rsrq") ?: current.nrCsiRsrq,
+            nrCsiSinr = extractNrMetric(simLogs, "csi_sinr") ?: current.nrCsiSinr,
+            nrSsbRsrp = extractNrMetric(simLogs, "ssb_rsrp") ?: current.nrSsbRsrp,
+            nrSsbRsrq = extractNrMetric(simLogs, "ssb_rsrq") ?: current.nrSsbRsrq,
+            nrSsbSinr = extractNrMetric(simLogs, "ssb_sinr") ?: current.nrSsbSinr
         )
+    }
+
+    // 5G/SA Detection Helper Functions
+    
+    private fun detect5gStandalone(logs: List<ForensicEvent>, networkType: String?): Boolean {
+        if (networkType != "NR") return false
+        
+        // Check for standalone indicators in logs
+        val saIndicators = logs.any { log ->
+            log.description.contains("5G SA", true) ||
+            log.description.contains("Standalone", true) ||
+            log.description.contains("NR_SA", true) ||
+            log.rawData?.contains("ENDC_SUPPORT:false") == true ||
+            log.rawData?.contains("NR_STANDALONE") == true
+        }
+        
+        if (saIndicators) return true
+        
+        // Check telemetry for SA indicators
+        val saTelemetry = _dashboardState.value.let { state ->
+            state.sim0.rrcStatus.contains("CONNECTED", true) && 
+            networkType == "NR" &&
+            !state.sim0.rrcStatus.contains("LTE", true)
+        }
+        
+        return saTelemetry
+    }
+    
+    private fun detect5gNonStandalone(logs: List<ForensicEvent>, networkType: String?): Boolean {
+        if (networkType != "NR") return false
+        
+        // Check for NSA indicators
+        val nsaIndicators = logs.any { log ->
+            log.description.contains("5G NSA", true) ||
+            log.description.contains("Non-Standalone", true) ||
+            log.description.contains("NR_NSA", true) ||
+            log.description.contains("EN-DC", true) ||
+            log.rawData?.contains("ENDC_SUPPORT:true") == true ||
+            log.rawData?.contains("NR_NON_STANDALONE") == true
+        }
+        
+        return nsaIndicators
+    }
+    
+    private fun enhanceNetworkType(networkType: String?, is5gSa: Boolean, is5gNsa: Boolean): String {
+        return when {
+            is5gSa -> "5G SA (Standalone)"
+            is5gNsa -> "5G NSA (EN-DC)"
+            networkType == "NR" -> "5G NR"
+            else -> networkType ?: "Unknown"
+        }
+    }
+    
+    private fun extractNrArfcn(logs: List<ForensicEvent>): String? {
+        return logs.firstNotNullOfOrNull { log ->
+            when {
+                log.rawData?.contains("nrArfcn") == true -> {
+                    Regex("nrArfcn[=:]\\s*(\\d+)").find(log.rawData)?.groupValues?.get(1)
+                }
+                log.rawData?.contains("nrArfcn") == true -> {
+                    Regex("nrArfcn[=:]\\s*(\\d+)").find(log.rawData)?.groupValues?.get(1)
+                }
+                else -> null
+            }
+        }
+    }
+    
+    private fun extractNrBand(logs: List<ForensicEvent>): String? {
+        return logs.firstNotNullOfOrNull { log ->
+            when {
+                log.rawData?.contains("nrBand") == true -> {
+                    Regex("nrBand[=:]\\s*(\\d+)").find(log.rawData)?.groupValues?.get(1)
+                }
+                log.rawData?.contains("band") == true -> {
+                    Regex("band[=:]\\s*(n\\d+)").find(log.rawData)?.groupValues?.get(1)
+                }
+                else -> null
+            }
+        }
+    }
+    
+    private fun extractNrState(logs: List<ForensicEvent>): String? {
+        return logs.firstNotNullOfOrNull { log ->
+            when {
+                log.rawData?.contains("nrState") == true -> {
+                    Regex("nrState[=:]\\s*(\\w+)").find(log.rawData)?.groupValues?.get(1)
+                }
+                log.description.contains("CONNECTED", true) -> "CONNECTED"
+                log.description.contains("IDLE", true) -> "IDLE"
+                else -> null
+            }
+        }
+    }
+    
+    private fun extractNrDuplexMode(logs: List<ForensicEvent>): String? {
+        return logs.firstNotNullOfOrNull { log ->
+            when {
+                log.rawData?.contains("TDD") == true -> "TDD"
+                log.rawData?.contains("FDD") == true -> "FDD"
+                log.description.contains("TDD", true) -> "TDD"
+                log.description.contains("FDD", true) -> "FDD"
+                else -> null
+            }
+        }
+    }
+    
+    private fun detectMmWaveBand(logs: List<ForensicEvent>): Boolean? {
+        val mmWaveBands = listOf("n257", "n258", "n260", "n261", "n262", "n263")
+        return logs.any { log ->
+            mmWaveBands.any { band ->
+                log.rawData?.contains(band, true) == true ||
+                log.description.contains(band, true)
+            }
+        }
+    }
+    
+    private fun extractNrScs(logs: List<ForensicEvent>): String? {
+        return logs.firstNotNullOfOrNull { log ->
+            when {
+                log.rawData?.contains("scs") == true -> {
+                    Regex("scs[=:]\\s*(\\d+)").find(log.rawData)?.groupValues?.get(1)
+                }
+                log.rawData?.contains("subCarrierSpacing") == true -> {
+                    Regex("subCarrierSpacing[=:]\\s*(\\d+)").find(log.rawData)?.groupValues?.get(1)
+                }
+                else -> null
+            }
+        }
+    }
+    
+    private fun extractNrMetric(logs: List<ForensicEvent>, metric: String): String? {
+        val metricPatterns = mapOf(
+            "rsrp" to listOf("rsrp", "nrRsrp"),
+            "rsrq" to listOf("rsrq", "nrRsrq"),
+            "sinr" to listOf("sinr", "nrSinr"),
+            "csi_rsrp" to listOf("csiRsrp", "csi_rsrp"),
+            "csi_rsrq" to listOf("csiRsrq", "csi_rsrq"),
+            "csi_sinr" to listOf("csiSinr", "csi_sinr"),
+            "ssb_rsrp" to listOf("ssbRsrp", "ssb_rsrp"),
+            "ssb_rsrq" to listOf("ssbRsrq", "ssb_rsrq"),
+            "ssb_sinr" to listOf("ssbSinr", "ssb_sinr")
+        )
+        
+        val patterns = metricPatterns[metric] ?: return null
+        
+        return logs.firstNotNullOfOrNull { log ->
+            patterns.firstNotNullOfOrNull { pattern ->
+                val regex = Regex("$pattern[=:]\\s*(-?\\d+)")
+                regex.find(log.rawData ?: "")?.groupValues?.get(1)
+            }
+        }
     }
 
     private fun observeBlockingEvents() {
@@ -215,7 +416,6 @@ class ForensicViewModel(application: Application) : AndroidViewModel(application
             }
         }
     }
-
     private fun startModemTelemetryPoller() {
         viewModelScope.launch {
             while (isActive) {
@@ -447,54 +647,63 @@ class ForensicViewModel(application: Application) : AndroidViewModel(application
     private fun convertCodenameToTechnicalName(codename: String): String {
         val normalized = codename.lowercase().trim()
         
-        // Map Qualcomm codenames to technical names
+        // Map codenames to technical names
         val codenameMap = mapOf(
+            // =========================
+            // Google Tensor Series
+            // =========================
+            "gs401" to "gs401",          // Tensor G4
+            "tensor g4" to "gs401",     // Tensor G4 alias
+            "zuma pro" to "gs401",      // Tensor G4 codename
+            "zumapro" to "tele",       // Tensor G4 codename
+            
+            "gs301" to "gs301",         // Tensor G3
+            "tensor g3" to "gs301",     // Tensor G3 alias
+            "zuma" to "gs301",          // Tensor G3 codename
+            
+            "gs201" to "gs201",         // Tensor G2
+            "tensor g2" to "gs201",     // Tensor G2 alias
+            "cloudripper" to "gs201",   // Tensor G2 codename
+            
+            "gs101" to "gs101",         // Tensor G1
+            "tensor g1" to "gs101",     // Tensor G1 alias
+            "whitechapel" to "gs101",  // Tensor G1 codename
+            
+            // =========================
+            // Qualcomm Snapdragon Series
+            // =========================
             // Latest Snapdragon 8 Series
-            "sun" to "sm8750",          // Snapdragon 8 Gen 4
-            "poka" to "sm8750",        // Snapdragon 8 Gen 4 variant
-            "sm8750" to "sm8750",      // Already technical
+            "sm8750" to "sm8750",      // Snapdragon 8 Gen 4
+            "storm" to "sm8750",       // Snapdragon 8 Gen 4 codename
             
-            "pineapple" to "sm8650",   // Snapdragon 8 Gen 3
-            "sm8650" to "sm8650",      // Already technical
+            "sm8650" to "sm8650",      // Snapdragon 8 Gen 3
+            "pineapple" to "sm8650",   // Snapdragon 8 Gen 3 codename
             
-            "kalama" to "sm8550",      // Snapdragon 8 Gen 2
-            "sm8550" to "sm8550",      // Already technical
+            "sm8550" to "sm8550",      // Snapdragon 8 Gen 2
+            "kalama" to "sm8550",      // Snapdragon 8 Gen 2 codename
             
-            "lahaina" to "sm8350",     // Snapdragon 888
-            "sm8350" to "sm8350",     // Already technical
+            "sm8450" to "sm8450",      // Snapdragon 8 Gen 1
             
-            // Previous Snapdragon 8 Series
-            "kona" to "sm8250",        // Snapdragon 865/865+
-            "sm8250" to "sm8250",     // Already technical
+            "sm8350" to "sm8350",      // Snapdragon 888
+            "lahaina" to "sm8350",     // Snapdragon 888 codename
             
-            "msmnile" to "sm8150",    // Snapdragon 855/855+
-            "sm8150" to "sm8150",     // Already technical
+            "sm8250" to "sm8250",      // Snapdragon 865
+            "kona" to "sm8250",        // Snapdragon 865 codename
             
-            // Snapdragon 7 Series
-            "crow" to "sm7450",        // Snapdragon 7 Gen 3
-            "sm7450" to "sm7450",     // Already technical
+            "sm8150" to "sm8150",      // Snapdragon 855
+            "msmnile" to "sm8150",     // Snapdragon 855 codename
             
-            "colombo" to "sm7350",    // Snapdragon 7+ Gen 2
-            "sm7350" to "sm7350",     // Already technical
+            "sdm845" to "sm8450",      // Snapdragon 845
+            "sdm835" to "sm8350",      // Snapdragon 835
+            "msm8998" to "msm8998",    // Snapdragon 835 alternative
             
-            "monaco" to "sm7325",     // Snapdragon 7 Gen 1
-            "sm7325" to "sm7325",     // Already technical
-            
-            // Snapdragon 6 Series
-            "blair" to "sm6375",      // Snapdragon 6 Gen 1
-            "sm6375" to "sm6375",     // Already technical
-            
-            // Legacy Snapdragon
-            "sdm845" to "sm8450",     // Snapdragon 845
-            "sm8450" to "sm8450",     // Already technical
-            
-            "sdm835" to "sm8350",     // Snapdragon 835
-            "msm8998" to "msm8998",   // Snapdragon 835 (alternative)
-            
-            "sdm830" to "sm8300",     // Snapdragon 830
-            "msm8996" to "msm8996",   // Snapdragon 820/821
-            
-            // MediaTek codenames (mapping to technical names where applicable)
+            // =========================
+            // MediaTek Dimensity Series
+            // =========================
+            "mt6990" to "mt6990",     // Dimensity 9400
+            "mt6989" to "mt6989",     // Dimensity 9300
+            "mt6985" to "mt6985",     // Dimensity 9200
+            "mt6983" to "mt6983",     // Dimensity 9000
             "mt6895" to "mt6895",     // Dimensity 8100
             "mt6893" to "mt6893",     // Dimensity 1200
             "mt6879" to "mt6879",     // Dimensity 1000
@@ -503,15 +712,79 @@ class ForensicViewModel(application: Application) : AndroidViewModel(application
             "mt6853" to "mt6853",     // Dimensity 700
             "mt6833" to "mt6833",     // Dimensity 600
             
-            // Samsung Exynos codenames
-            "s5e9945" to "exynos2400", // Exynos 2400
-            "exynos2400" to "exynos2400",
+            // =========================
+            // MediaTek Helio Series
+            // =========================
+            "mt6765" to "mt6765",     // Helio P60
+            "mt6779" to "mt6779",     // Helio G90T
+            "mt6785" to "mt6785",     // Helio G80
+            "mt6768" to "mt6768",     // Helio G85
             
-            "s5e9840" to "exynos2100", // Exynos 2100
-            "exynos2100" to "exynos2100",
+            // =========================
+            // Legacy MediaTek
+            // =========================
+            "mt6735" to "mt6735",     // MT6735
+            "mt6737" to "mt6737",     // MT6737
+            "mt6739" to "mt6739",     // MT6739
+            "mt6750" to "mt6750",     // MT6750
+            "mt6752" to "mt6752",     // MT6752
+            "mt6795" to "mt6795",     // MT6795
             
-            "s5e8825" to "exynos1080", // Exynos 1080
-            "exynos1080" to "exynos1080"
+            // =========================
+            // Samsung Exynos Series
+            // =========================
+            "exynos2500" to "exynos2500", // Exynos 2500
+            "s5e9925" to "exynos2500",   // Exynos 2500 codename
+            
+            "exynos2400" to "exynos2400", // Exynos 2400
+            "s5e9945" to "exynos2400",   // Exynos 2400 codename
+            
+            "exynos2100" to "exynos2100", // Exynos 2100
+            "s5e9840" to "exynos2100",   // Exynos 2100 codename
+            
+            "exynos1280" to "exynos1280", // Exynos 1280
+            "s5e8835" to "exynos1280",   // Exynos 1280 codename
+            
+            "exynos1080" to "exynos1080", // Exynos 1080
+            "s5e8825" to "exynos1080",   // Exynos 1080 codename
+            
+            "exynos990" to "exynos990",   // Exynos 990
+            "s5e9830" to "exynos990",   // Exynos 990 codename
+            
+            "exynos980" to "exynos980",   // Exynos 980
+            "s5e8820" to "exynos980",   // Exynos 980 codename
+            
+            "exynos9611" to "exynos9611", // Exynos 9611
+            "s5e9823" to "exynos9611",   // Exynos 9611 codename
+            
+            "exynos9825" to "exynos9825", // Exynos 9825
+            "s5e9810" to "exynos9825",   // Exynos 9825 codename
+            
+            "exynos9820" to "exynos9820", // Exynos 9820
+            "s5e9800" to "exynos9820",   // Exynos 9820 codename
+            
+            // Legacy Exynos
+            "exynos7420" to "exynos7420", // Exynos 7420
+            "exynos8890" to "exynos8890", // Exynos 8890
+            "exynos8895" to "exynos8895", // Exynos 8895
+            "exynos9810" to "exynos9810", // Exynos 9810
+            
+            // =========================
+            // UNISOC (Spreadtrum)
+            // =========================
+            "ums512" to "ums512",       // UNISOC T770
+            "ums9620" to "ums9620",     // UNISOC T820
+            "ums9230" to "ums9230",     // UNISOC T606
+            "sc9863a" to "sc9863a",     // UNISOC SC9863A
+            "sc9832e" to "sc9832e",     // UNISOC SC9832E
+            "sc7731e" to "sc7731e",     // UNISOC SC7731E
+            
+            // Generic fallbacks
+            "qcom" to "qcom",        // Generic Qualcomm fallback
+            "msm" to "msm",         // Generic MSM fallback
+            "mt" to "mt",           // Generic MediaTek fallback
+            "exynos" to "exynos",    // Generic Exynos fallback
+            "unisoc" to "unisoc"     // Generic UNISOC fallback
         )
         
         return codenameMap[normalized] ?: codename.uppercase()

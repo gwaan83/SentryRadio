@@ -303,7 +303,23 @@ class ForensicService : Service() {
         val m = pattern.matcher(input)
         if (m.find()) {
             val typeInt = (m.group(1) ?: m.group(2))?.toIntOrNull() ?: return null
-            return when (typeInt) { 13 -> "LTE"; 20 -> "NR"; 1, 2, 16 -> "GSM"; 3, 8, 9, 10, 15 -> "WCDMA"; else -> "LTE" }
+            val baseType = when (typeInt) { 
+                13 -> "LTE"; 20 -> "NR"; 1, 2, 16 -> "GSM"; 
+                3, 8, 9, 10, 15 -> "WCDMA"; else -> "LTE" 
+            }
+            
+            // Enhanced 5G/SA detection
+            if (baseType == "NR") {
+                return when {
+                    input.contains("ENDC_SUPPORT:false", true) -> "5G SA (Standalone)"
+                    input.contains("NR_STANDALONE", true) -> "5G SA (Standalone)"
+                    input.contains("ENDC_SUPPORT:true", true) -> "5G NSA (EN-DC)"
+                    input.contains("NR_NON_STANDALONE", true) -> "5G NSA (EN-DC)"
+                    else -> "5G NR"
+                }
+            }
+            
+            return baseType
         }
         return null
     }

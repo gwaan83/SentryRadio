@@ -490,7 +490,31 @@ class SentryHook : IXposedHookLoadPackage {
                     intent.putExtra("earfcn", if (identity.nrarfcn != Int.MAX_VALUE) identity.nrarfcn else -1)
                     intent.putExtra("tac", if (identity.tac != Int.MAX_VALUE) identity.tac else -1)
                     intent.putExtra("mcc", identity.mccString); intent.putExtra("mnc", identity.mncString)
-                    intent.putExtra("networkType", "NR"); foundIdentity = true
+                    
+                    // Enhanced 5G/SA detection
+                    val networkType = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                        when {
+                            identity.mncString == null || identity.mccString == null -> "5G NR (Unknown)"
+                            is5gStandalone(identity) -> "5G SA (Standalone)"
+                            is5gNonStandalone(identity) -> "5G NSA (EN-DC)"
+                            else -> "5G NR"
+                        }
+                    } else {
+                        "5G NR"
+                    }
+                    
+                    intent.putExtra("networkType", networkType)
+                    
+                    // Add 5G specific metrics
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                        intent.putExtra("nrArfcn", if (identity.nrarfcn != Int.MAX_VALUE) identity.nrarfcn else -1)
+                        intent.putExtra("nrBand", extractNrBandFromArfcn(identity.nrarfcn))
+                        intent.putExtra("nrState", extractNrState(identity))
+                        intent.putExtra("nrDuplexMode", extractNrDuplexMode(identity))
+                        intent.putExtra("nrMmWaveBand", isMmWaveBand(identity.nrarfcn))
+                    }
+                    
+                    foundIdentity = true
                 }
             }
             is CellIdentityGsm -> {
@@ -511,5 +535,110 @@ class SentryHook : IXposedHookLoadPackage {
             }
         }
         if (foundIdentity) sendForensicBroadcast(context, intent)
+    }
+    
+    // 5G/SA Detection Helper Functions for Xposed
+    
+    private fun is5gStandalone(identity: CellIdentityNr): Boolean {
+        return try {
+            // Check for standalone indicators
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                // Method 1: Check if ENDC (E-UTRA-NR Dual Connectivity) is not supported
+                val endcSupport = XposedHelpers.callMethod(identity, "getEndcSupport") as? Boolean
+                if (endcSupport == false) return true
+                
+                // Method 2: Check NR operation status
+                val nrStatus = XposedHelpers.callMethod(identity, "getNrStatus") as? Int
+                if (nrStatus == 1) return true // Connected standalone
+                
+                // Method 3: Check if there's no LTE anchor
+                val lteBand = XposedHelpers.callMethod(identity, "getBandwidth") as? Int
+                if (lteBand == null || lteBand == 0) return true
+            }
+            false
+        } catch (e: Exception) {
+            XposedBridge.log("SentryHook: Error checking 5G SA status: ${e.message}")
+            false
+        }
+    }
+    
+    private fun is5gNonStandalone(identity: CellIdentityNr): Boolean {
+        return try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                val endcSupport = XposedHelpers.callMethod(identity, "getEndcSupport") as? Boolean
+                if (endcSupport == true) return true
+                
+                val nrStatus = XposedHelpers.callMethod(identity, "getNrStatus") as? Int
+                if (nrStatus == 2) return true // Connected NSA
+            }
+            false
+        } catch (e: Exception) {
+            XposedBridge.log("SentryHook: Error checking 5G NSA status: ${e.message}")
+            false
+        }
+    }
+    
+    private fun extractNrBandFromArfcn(nrarfcn: Int): String {
+        if (nrarfcn == Int.MAX_VALUE) return "---"
+        
+        // NR-ARFCN to band mapping (simplified)
+        return when {
+            nrarfcn in 422000..434000 -> "n1"
+            nrarfcn in 386000..399000 -> "n3"
+            nrarfcn in 1738000..1788000 -> "n257" // mmWave
+            nrarfcn in 2014667..2026667 -> "n258" // mmWave
+            nrarfcn in 2220000..2260000 -> "n260" // mmWave
+            nrarfcn in 2425000..2475000 -> "n261" // mmWave
+            nrarfcn in 460000..480000 -> "n5"
+            nrarfcn in 514000..524000 -> "n7"
+            nrarfcn in 869000..904000 -> "n8"
+            nrarfcn in 371000..376000 -> "n20"
+            nrarfcn in 620000..680000 -> "n28"
+            nrarfcn in 1730000..1780000 -> "n66"
+            nrarfcn in 422000..440000 -> "n71"
+            nrarfcn in 3650000..3700000 -> "n77"
+            nrarfcn in 4150000..4350000 -> "n78"
+            else -> "n${nrarfcn / 10000}"
+        }
+    }
+    
+    private fun extractNrState(identity: CellIdentityNr): String {
+        return try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                val nrStatus = XposedHelpers.callMethod(identity, "getNrStatus") as? Int
+                when (nrStatus) {
+                    0 -> "IDLE"
+                    1 -> "CONNECTED_SA"
+                    2 -> "CONNECTED_NSA"
+                    3 -> "CONNECTED"
+                    else -> "UNKNOWN"
+                }
+            } else {
+                "UNKNOWN"
+            }
+        } catch (e: Exception) {
+            "UNKNOWN"
+        }
+    }
+    
+    private fun extractNrDuplexMode(identity: CellIdentityNr): String {
+        // Simplified duplex mode detection based on band
+        val band = extractNrBandFromArfcn(if (identity.nrarfcn != Int.MAX_VALUE) identity.nrarfcn else 0)
+        return when {
+            band.startsWith("n7") || band.startsWith("n38") || 
+            band.startsWith("n40") || band.startsWith("n41") ||
+            band.startsWith("n77") || band.startsWith("n78") ||
+            band.startsWith("n79") -> "TDD"
+            band.startsWith("n1") || band.startsWith("n3") ||
+            band.startsWith("n5") || band.startsWith("n8") ||
+            band.startsWith("n20") || band.startsWith("n28") -> "FDD"
+            else -> "UNKNOWN"
+        }
+    }
+    
+    private fun isMmWaveBand(nrarfcn: Int): Boolean {
+        if (nrarfcn == Int.MAX_VALUE) return false
+        val band = extractNrBandFromArfcn(nrarfcn)
+        return band in listOf("n257", "n258", "n260", "n261", "n262", "n263")
     }
 }

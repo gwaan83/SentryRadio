@@ -567,6 +567,51 @@ fun DashboardScreen(viewModel: ForensicViewModel, onShowCveDialog: () -> Unit, o
                 MetricCard("LAC / TAC", if (activeSim.lac != "---") activeSim.lac else activeSim.tac, Modifier.weight(1f))
                 MetricCard("Network Type", activeSim.networkType, Modifier.weight(1f))
             }
+            
+            // 5G/SA Specific Information
+            if (activeSim.is5gSa || activeSim.is5gNsa) {
+                Spacer(Modifier.height(12.dp))
+                Text("5G/SA ADVANCED METRICS", color = Color(0xFF00FF9D), fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 8.dp))
+                
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    MetricCard("5G Mode", if (activeSim.is5gSa) "Standalone" else "Non-Standalone", Modifier.weight(1f), if (activeSim.is5gSa) Color.Green else Color(0xFF9D00FF))
+                    MetricCard("NR Band", activeSim.nrBand, Modifier.weight(1f))
+                }
+                
+                Spacer(Modifier.height(12.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    MetricCard("NR ARFCN", activeSim.nrArfcn, Modifier.weight(1f))
+                    MetricCard("Duplex Mode", activeSim.nrDuplexMode, Modifier.weight(1f))
+                }
+                
+                if (activeSim.nrMmWaveBand) {
+                    Spacer(Modifier.height(12.dp))
+                    MetricCard("mmWave Band", "ACTIVE", Modifier.fillMaxWidth(), Color(0xFFFF9D00))
+                }
+                
+                Spacer(Modifier.height(12.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    MetricCard("NR State", activeSim.nrState, Modifier.weight(1f))
+                    MetricCard("SCS", "${activeSim.nrScs} kHz", Modifier.weight(1f))
+                }
+                
+                // 5G Signal Metrics
+                if (activeSim.nrRsrp != "---" || activeSim.nrRsrq != "---" || activeSim.nrSinr != "---") {
+                    Spacer(Modifier.height(12.dp))
+                    Text("5G SIGNAL QUALITY", color = Color.Cyan, fontSize = 11.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 8.dp))
+                    
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        MetricCard("NR RSRP", "${activeSim.nrRsrp} dBm", Modifier.weight(1f))
+                        MetricCard("NR RSRQ", "${activeSim.nrRsrq} dB", Modifier.weight(1f))
+                    }
+                    
+                    Spacer(Modifier.height(12.dp))
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        MetricCard("NR SINR", "${activeSim.nrSinr} dB", Modifier.weight(1f))
+                        MetricCard("NR SSB RSRP", "${activeSim.nrSsbRsrp} dBm", Modifier.weight(1f))
+                    }
+                }
+            }
             Spacer(Modifier.height(12.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 MetricCard("Signal Power", "${activeSim.signalStrength} dBm", Modifier.weight(1f), signalColor)
@@ -1112,7 +1157,7 @@ fun SettingsScreen(viewModel: ForensicViewModel) {
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text(
-                    text = "Developer: fzer0x | Version: 0.4.2",
+                    text = "Developer: fzer0x | Version: 0.4.5",
                     color = Color.Gray,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Medium

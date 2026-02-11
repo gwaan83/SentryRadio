@@ -10,6 +10,111 @@ log_action() {
 }
 
 case $COMMAND in
+    "--force-5g-sa")
+        if [ "$VALUE" == "true" ]; then
+            log_action "Enforcing 5G Standalone-only mode"
+            # Force 5G SA mode through system properties
+            settings put global preferred_network_mode 22  # NR_SA only
+            settings put global preferred_network_mode1 22
+            settings put global preferred_network_mode2 22
+            
+            # Disable ENDC (E-UTRA-NR Dual Connectivity) for SA only
+            setprop persist.vendor.radio.endc_support 0
+            setprop persist.radio.endc_support 0
+            setprop persist.vendor.radio.enable_nr_advanced 1
+            
+            # Force NR standalone
+            setprop persist.vendor.radio.nr_standalone 1
+            setprop persist.radio.nr_standalone 1
+            
+            # Broadcast hardware forcing event to app
+            am broadcast -a dev.fzer0x.sentry.HARDWARE_BLOCKING --es blockType "5G_SA_FORCE" --es description "Hardware-level 5G Standalone-only mode enabled" --ei severity 6 --ei simSlot 0
+        else
+            log_action "Restoring default 5G mode"
+            settings put global preferred_network_mode 9  # Auto mode
+            
+            # Re-enable ENDC
+            setprop persist.vendor.radio.endc_support 1
+            setprop persist.radio.endc_support 1
+            
+            # Clear SA forcing
+            setprop persist.vendor.radio.nr_standalone 0
+            setprop persist.radio.nr_standalone 0
+            
+            # Broadcast hardware forcing event to app
+            am broadcast -a dev.fzer0x.sentry.HARDWARE_BLOCKING --es blockType "5G_SA_FORCE" --es description "Hardware-level 5G Standalone-only mode disabled" --ei severity 6 --ei simSlot 0
+        fi
+        ;;
+    "--force-5g-nsa")
+        if [ "$VALUE" == "true" ]; then
+            log_action "Enforcing 5G Non-Standalone (EN-DC) mode"
+            # Force 5G NSA mode through system properties
+            settings put global preferred_network_mode 21  # NR_NSA only
+            settings put global preferred_network_mode1 21
+            settings put global preferred_network_mode2 21
+            
+            # Enable ENDC for NSA
+            setprop persist.vendor.radio.endc_support 1
+            setprop persist.radio.endc_support 1
+            setprop persist.vendor.radio.enable_nr_advanced 1
+            
+            # Force NR NSA
+            setprop persist.vendor.radio.nr_nsa 1
+            setprop persist.radio.nr_nsa 1
+            setprop persist.vendor.radio.nr_standalone 0
+            setprop persist.radio.nr_standalone 0
+            
+            # Broadcast hardware forcing event to app
+            am broadcast -a dev.fzer0x.sentry.HARDWARE_BLOCKING --es blockType "5G_NSA_FORCE" --es description "Hardware-level 5G Non-Standalone mode enabled" --ei severity 6 --ei simSlot 0
+        else
+            log_action "Restoring default 5G mode"
+            settings put global preferred_network_mode 9  # Auto mode
+            
+            # Clear NSA forcing
+            setprop persist.vendor.radio.nr_nsa 0
+            setprop persist.radio.nr_nsa 0
+            
+            # Broadcast hardware forcing event to app
+            am broadcast -a dev.fzer0x.sentry.HARDWARE_BLOCKING --es blockType "5G_NSA_FORCE" --es description "Hardware-level 5G Non-Standalone mode disabled" --ei severity 6 --ei simSlot 0
+        fi
+        ;;
+    "--5g-info")
+        echo "--- 5G/SA Network Information ---"
+        echo "5G Mode: $(getprop persist.vendor.radio.nr_standalone)"
+        echo "ENDC Support: $(getprop persist.vendor.radio.endc_support)"
+        echo "NR Advanced: $(getprop persist.vendor.radio.enable_nr_advanced)"
+        echo "Current Network Type: $(dumpsys telephony.registry | grep -E 'mDataNetworkType|mNetworkType' | head -1 | cut -d= -f2)"
+        echo "NR Status: $(dumpsys telephony.registry | grep -i 'nr' | head -3)"
+        
+        # Get detailed 5G metrics if available
+        if [ "$(getprop persist.sentry.advanced_telemetry)" = "1" ]; then
+            echo ""
+            echo "--- Advanced 5G Metrics ---"
+            echo "NR ARFCN: $(dumpsys telephony.registry | grep -i 'nrarfcn' | head -1 | grep -o '[0-9]\+' | head -1)"
+            echo "NR Band: $(dumpsys telephony.registry | grep -i 'band' | grep -i 'n[0-9]' | head -1 | grep -o 'n[0-9]\+')"
+            echo "NR State: $(dumpsys telephony.registry | grep -i 'nr.*state' | head -1 | cut -d= -f2)"
+            echo "Duplex Mode: $(dumpsys telephony.registry | grep -i 'duplex' | head -1 | cut -d= -f2)"
+            echo "SCS (kHz): $(dumpsys telephony.registry | grep -i 'scs' | head -1 | grep -o '[0-9]\+' | head -1)"
+            
+            # 5G Signal Quality Metrics
+            echo "NR RSRP: $(getprop vendor.radio.nr_rsrp)"
+            echo "NR RSRQ: $(getprop vendor.radio.nr_rsrq)"
+            echo "NR SINR: $(getprop vendor.radio.nr_sinr)"
+            echo "NR SSB RSRP: $(getprop vendor.radio.nr_ssb_rsrp)"
+            echo "NR SSB RSRQ: $(getprop vendor.radio.nr_ssb_rsrq)"
+            echo "NR SSB SINR: $(getprop vendor.radio.nr_ssb_sinr)"
+            
+            # mmWave Detection
+            NR_ARFCN=$(dumpsys telephony.registry | grep -i 'nrarfcn' | head -1 | grep -o '[0-9]\+' | head -1)
+            if [ -n "$NR_ARFCN" ]; then
+                if [ "$NR_ARFCN" -ge 1738000 ] && [ "$NR_ARFCN" -le 2475000 ]; then
+                    echo "mmWave Band: DETECTED"
+                else
+                    echo "mmWave Band: Not detected (Sub-6 GHz)"
+                fi
+            fi
+        fi
+        ;;
     "--force-lte")
         if [ "$VALUE" == "true" ]; then
             log_action "Enforcing LTE-only mode"
@@ -476,6 +581,6 @@ case $COMMAND in
         log_action "Validation complete"
         ;;
     *)
-        echo "Usage: sentry-ctl [--force-lte|--reset-radio|--panic|--panic-extended|--block-2g|--reject-a50|--telemetry|--fingerprint|--status|--monitor-modem|--geo-protect|--forensic-dump|--zero-day-protect|--hard-shutdown|--validate-panic|--recover]"
+        echo "Usage: sentry-ctl [--force-5g-sa|--force-5g-nsa|--force-lte|--reset-radio|--panic|--panic-extended|--block-2g|--reject-a50|--telemetry|--fingerprint|--status|--monitor-modem|--geo-protect|--forensic-dump|--zero-day-protect|--hard-shutdown|--validate-panic|--recover|--5g-info]"
         ;;
 esac
