@@ -332,17 +332,25 @@ fun MainContainer(viewModel: ForensicViewModel) {
                 onDismiss = { showRebootDialog = false },
                 onReboot = { 
                     showRebootDialog = false
-                    // Trigger system reboot
+                    // Trigger system reboot with proper error handling
                     try {
                         val powerManager = context.getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
                         powerManager.reboot("Sentry Radio Module Installation")
+                    } catch (e: SecurityException) {
+                        // Handle permission issues gracefully
+                        Toast.makeText(context, "Reboot permission denied. Please reboot manually.", Toast.LENGTH_LONG).show()
                     } catch (e: Exception) {
                         // Fallback for devices that don't allow app reboot
-                        val intent = Intent(Intent.ACTION_REBOOT)
-                        intent.putExtra("now", "now")
-                        intent.putExtra("interval", 1)
-                        intent.putExtra("window", 0)
-                        context.sendBroadcast(intent)
+                        try {
+                            val intent = Intent(Intent.ACTION_REBOOT)
+                            intent.putExtra("now", "now")
+                            intent.putExtra("interval", 1)
+                            intent.putExtra("window", 0)
+                            context.sendBroadcast(intent)
+                        } catch (e2: Exception) {
+                            // Final fallback - show manual reboot instruction
+                            Toast.makeText(context, "Please reboot your device manually to activate the module.", Toast.LENGTH_LONG).show()
+                        }
                     }
                 }
             )
