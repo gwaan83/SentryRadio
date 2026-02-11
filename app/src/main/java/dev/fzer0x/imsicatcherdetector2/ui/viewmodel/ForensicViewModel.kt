@@ -676,42 +676,68 @@ class ForensicViewModel(application: Application) : AndroidViewModel(application
     fun updateZeroDayProtection(value: Boolean) { _settings.update { it.copy(zeroDayProtection = value) }; prefs.edit { putBoolean("zero_day_protection", value) }
         if (_dashboardState.value.isHardeningModuleActive) {
             viewModelScope.launch {
-                val action = if (value) "enable" else "disable"
-                RootRepository.execute("sentry-ctl --zero-day-protect $action")
-                _syncStatus.emit("Zero-Day Protection ${if (value) "enabled" else "disabled"}")
+                try {
+                    val action = if (value) "enable" else "disable"
+                    var result = RootRepository.execute("sentry-ctl --zero-day-protect $action")
+                    if (!result.success) {
+                        result = RootRepository.execute("/data/adb/modules/sentry_radio_hardening/system/bin/sentry-ctl --zero-day-protect $action")
+                    }
+                    _syncStatus.emit("Zero-Day Protection ${if (value) "enabled" else "disabled"}: ${if (result.success) "Success" else "Failed - ${result.error}"}")
+                } catch (e: Exception) {
+                    _syncStatus.emit("Zero-Day Protection failed: ${e.message}")
+                }
             }
         }
     }
     fun updateGeoFencingProtection(value: Boolean) { _settings.update { it.copy(geoFencingProtection = value) }; prefs.edit { putBoolean("geo_fencing_protection", value) }
         if (_dashboardState.value.isHardeningModuleActive) {
             viewModelScope.launch {
-                val action = if (value) "enable" else "disable"
-                RootRepository.execute("sentry-ctl --geo-protect $action")
-                _syncStatus.emit("Geo-Fencing Protection ${if (value) "enabled" else "disabled"}")
+                try {
+                    val action = if (value) "enable" else "disable"
+                    var result = RootRepository.execute("sentry-ctl --geo-protect $action")
+                    if (!result.success) {
+                        result = RootRepository.execute("/data/adb/modules/sentry_radio_hardening/system/bin/sentry-ctl --geo-protect $action")
+                    }
+                    _syncStatus.emit("Geo-Fencing Protection ${if (value) "enabled" else "disabled"}: ${if (result.success) "Success" else "Failed - ${result.error}"}")
+                } catch (e: Exception) {
+                    _syncStatus.emit("Geo-Fencing Protection failed: ${e.message}")
+                }
             }
         }
     }
     fun updateAdvancedTelemetry(value: Boolean) { _settings.update { it.copy(advancedTelemetry = value) }; prefs.edit { putBoolean("advanced_telemetry", value) }
         if (_dashboardState.value.isHardeningModuleActive) {
             viewModelScope.launch {
-                RootRepository.execute("setprop persist.sentry.advanced_telemetry ${if (value) 1 else 0}")
-                _syncStatus.emit("Advanced Telemetry ${if (value) "enabled" else "disabled"}")
+                try {
+                    val result = RootRepository.execute("setprop persist.sentry.advanced_telemetry ${if (value) 1 else 0}")
+                    _syncStatus.emit("Advanced Telemetry ${if (value) "enabled" else "disabled"}: ${if (result.success) "Success" else "Failed - ${result.error}"}")
+                } catch (e: Exception) {
+                    _syncStatus.emit("Advanced Telemetry failed: ${e.message}")
+                }
             }
         }
     }
     fun updateExtendedPanicMode(value: Boolean) { _settings.update { it.copy(extendedPanicMode = value) }; prefs.edit { putBoolean("extended_panic_mode", value) }
         if (_dashboardState.value.isHardeningModuleActive) {
             viewModelScope.launch {
-                RootRepository.execute("setprop persist.sentry.panic_extended ${if (value) 1 else 0}")
-                _syncStatus.emit("Extended Panic Mode ${if (value) "enabled" else "disabled"}")
+                try {
+                    val result = RootRepository.execute("setprop persist.sentry.panic_extended ${if (value) 1 else 0}")
+                    _syncStatus.emit("Extended Panic Mode ${if (value) "enabled" else "disabled"}: ${if (result.success) "Success" else "Failed - ${result.error}"}")
+                } catch (e: Exception) {
+                    _syncStatus.emit("Extended Panic Mode failed: ${e.message}")
+                }
             }
         }
     }
     fun updateRealTimeModemMonitoring(value: Boolean) { _settings.update { it.copy(realTimeModemMonitoring = value) }; prefs.edit { putBoolean("real_time_modem_monitoring", value) }
         if (_dashboardState.value.isHardeningModuleActive) {
             viewModelScope.launch {
-                RootRepository.execute("setprop persist.sentry.continuous_monitor ${if (value) 1 else 0}")
-                _syncStatus.emit("Real-time Modem Monitoring ${if (value) "enabled" else "disabled"}")
+                try {
+                    val result = RootRepository.execute("setprop persist.sentry.continuous_monitor ${if (value) 1 else 0}")
+                    _syncStatus.emit("Real-time Modem Monitoring ${if (value) "enabled" else "disabled"}: ${if (result.success) "Success" else "Failed - ${result.error}"}")
+                } catch (e: Exception) {
+                    _syncStatus.emit("Real-time Modem Monitoring failed: ${e.message}")
+                }
             }
         }
     }
