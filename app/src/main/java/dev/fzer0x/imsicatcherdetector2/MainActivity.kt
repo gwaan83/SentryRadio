@@ -280,7 +280,7 @@ fun MainContainer(viewModel: ForensicViewModel) {
 
                 Box(modifier = Modifier.weight(1f)) {
                     when (selectedTab) {
-                        0 -> DashboardScreen(viewModel) { showCveDialog = true }
+                        0 -> DashboardScreen(viewModel, { showCveDialog = true }) { selectedTab = 5 }
                         1 -> MapForensicScreen(viewModel)
                         2 -> TimelineScreen(viewModel) { event ->
                             selectedEvent = event
@@ -366,7 +366,7 @@ fun RowScope.NavigationItem(label: String, icon: ImageVector, selected: Boolean,
 }
 
 @Composable
-fun DashboardScreen(viewModel: ForensicViewModel, onShowCveDialog: () -> Unit) {
+fun DashboardScreen(viewModel: ForensicViewModel, onShowCveDialog: () -> Unit, onNavigateToSettings: () -> Unit) {
     val state by viewModel.dashboardState.collectAsState()
     val alertBrush = Brush.verticalGradient(listOf(Color(0xFF420000), Color.Black))
     val scrollState = rememberScrollState()
@@ -397,7 +397,30 @@ fun DashboardScreen(viewModel: ForensicViewModel, onShowCveDialog: () -> Unit) {
         val activeSim = if(state.activeSimSlot == 0) state.sim0 else state.sim1
 
         Column(Modifier.padding(16.dp)) {
-            Box(modifier = Modifier.fillMaxWidth()) {
+        // Module Update Card
+        if (state.moduleUpdateAvailable) {
+            Card(
+                modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFFFF9800).copy(alpha = 0.2f)),
+                border = BorderStroke(1.dp, Color(0xFFFF9800))
+            ) {
+                Row(
+                    Modifier.padding(12.dp).clickable { onNavigateToSettings() },
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(Icons.Default.Info, contentDescription = null, tint = Color(0xFFFF9800))
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("MODULE UPDATE AVAILABLE", color = Color(0xFFFF9800), fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        Text("New version: ${state.availableModuleVersion}", color = Color.White, fontSize = 10.sp)
+                        Text("Tap to open Settings and update", color = Color.Gray, fontSize = 9.sp)
+                    }
+                    Icon(Icons.Default.ArrowForward, contentDescription = null, tint = Color(0xFFFF9800))
+                }
+            }
+        }
+
+        Box(modifier = Modifier.fillMaxWidth()) {
                 ThreatGauge(state.threatLevel, state.securityStatus)
 
                 IconButton(
