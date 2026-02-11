@@ -13,6 +13,7 @@ import android.location.LocationManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.PowerManager
 import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -73,6 +74,7 @@ import dev.fzer0x.imsicatcherdetector2.security.UpdateManager
 import dev.fzer0x.imsicatcherdetector2.ui.components.UpdateDialog
 import dev.fzer0x.imsicatcherdetector2.ui.components.CveListDialog
 import dev.fzer0x.imsicatcherdetector2.utils.VersionUtils
+import kotlinx.coroutines.delay
 import org.osmdroid.config.Configuration
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
 import org.osmdroid.util.GeoPoint
@@ -171,6 +173,7 @@ fun MainContainer(viewModel: ForensicViewModel) {
     var showSheet by remember { mutableStateOf(false) }
     var showUpdateDialog by remember { mutableStateOf(false) }
     var showCveDialog by remember { mutableStateOf(false) }
+    var showRebootDialog by remember { mutableStateOf(false) }
     var currentVersion by remember { mutableStateOf("0-0.0.0") }
     var latestVersion by remember { mutableStateOf("0-0.0.0") }
     val context = LocalContext.current as MainActivity
@@ -194,6 +197,12 @@ fun MainContainer(viewModel: ForensicViewModel) {
     LaunchedEffect(Unit) {
         viewModel.syncStatus.collect { message ->
             Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+            // Show reboot dialog only when installation is actually completed successfully
+            if (message == "Installation successful! Reboot required.") {
+                // Small delay to ensure the installation toast is seen first
+                kotlinx.coroutines.delay(5000)
+                showRebootDialog = true
+            }
         }
     }
 
@@ -314,6 +323,28 @@ fun MainContainer(viewModel: ForensicViewModel) {
                 baseband = state.detectedBaseband,
                 securityPatch = state.securityPatch,
                 onDismiss = { showCveDialog = false }
+            )
+        }
+        
+        // Reboot Dialog
+        if (showRebootDialog) {
+            RebootDialog(
+                onDismiss = { showRebootDialog = false },
+                onReboot = { 
+                    showRebootDialog = false
+                    // Trigger system reboot
+                    try {
+                        val powerManager = context.getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
+                        powerManager.reboot("Sentry Radio Module Installation")
+                    } catch (e: Exception) {
+                        // Fallback for devices that don't allow app reboot
+                        val intent = Intent(Intent.ACTION_REBOOT)
+                        intent.putExtra("now", "now")
+                        intent.putExtra("interval", 1)
+                        intent.putExtra("window", 0)
+                        context.sendBroadcast(intent)
+                    }
+                }
             )
         }
     }
@@ -1118,6 +1149,99 @@ fun StatusIndicator(label: String, active: Boolean, modifier: Modifier) {
             Text(if (active) "OK" else "OFF", color = color, fontSize = 10.sp, fontWeight = FontWeight.Black)
         }
     }
+}
+
+@Composable
+fun RebootDialog(onDismiss: () -> Unit, onReboot: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                "Reboot Required",
+                color = Color.Cyan,
+                fontWeight = FontWeight.Bold
+            )
+        },
+        text = {
+            Column {
+                Text(
+                    "The Sentry Radio Hardening Module has been successfully installed/updated.",
+                    color = Color.White,
+                    fontSize = 14.sp
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "A system reboot is required to activate the module and apply all security enhancements.",
+                    color = Color.Gray,
+                    fontSize = 12.sp
+                )
+                Spacer(Modifier.height(12.dp))
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFFFF9800).copy(alpha = 0.1f)),
+                    border = BorderStroke(1.dp, Color(0xFFFF9800))
+                ) {
+                    Row(
+                        Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            Icons.Default.Info,
+                            contentDescription = null,
+                            tint = Color(0xFFFF9800),
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            "Please reboot your device to apply the changes.",
+                            color = Color(0xFFFF9800),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = onReboot,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color.Cyan,
+                    contentColor = Color.Black
+                ),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(
+                    Icons.Default.Refresh,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    "REBOOT NOW",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 14.sp
+                )
+            }
+        },
+        dismissButton = {
+            OutlinedButton(
+                onClick = onDismiss,
+                colors = ButtonDefaults.outlinedButtonColors(
+                    contentColor = Color.Gray
+                ),
+                border = BorderStroke(1.dp, Color.Gray),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    "LATER",
+                    fontSize = 14.sp
+                )
+            }
+        },
+        containerColor = Color(0xFF1E1E1E),
+        textContentColor = Color.White
+    )
 }
 
 @Composable
