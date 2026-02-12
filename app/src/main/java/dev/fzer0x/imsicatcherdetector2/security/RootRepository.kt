@@ -3,6 +3,7 @@ package dev.fzer0x.imsicatcherdetector2.security
 import android.util.Log
 import com.topjohnwu.superuser.Shell
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 
 /**
@@ -39,13 +40,56 @@ object RootRepository {
      * Nutzt die globale Shell-Instanz von libsu (hält die Session offen).
      */
     suspend fun execute(command: String): ShellResult = withContext(Dispatchers.IO) {
-        val result = Shell.cmd(command).exec()
-        ShellResult(
-            success = result.isSuccess,
-            output = result.out.joinToString("\n"),
-            error = result.err.joinToString("\n"),
-            exitCode = result.code
-        )
+        return@withContext try {
+            val result = Shell.cmd(command).exec()
+            ShellResult(
+                success = result.isSuccess,
+                output = result.out.joinToString("\n"),
+                error = result.err.joinToString("\n"),
+                exitCode = result.code
+            )
+        } catch (e: Exception) {
+            Log.e(TAG, "Root command failed: $command", e)
+            ShellResult(
+                success = false,
+                output = "",
+                error = "Execution failed: ${e.message}",
+                exitCode = -1
+            )
+        }
+    }
+
+    /**
+     * Führt einen Root-Befehl mit Retry-Mechanismus aus
+     */
+    suspend fun executeWithRetry(
+        command: String, 
+        maxRetries: Int = 3,
+        retryDelayMs: Long = 1000
+    ): ShellResult = withContext(Dispatchers.IO) {
+        var lastResult: ShellResult? = null
+        
+        repeat(maxRetries) { attempt ->
+            try {
+                val result = execute(command)
+                if (result.success) {
+                    return@withContext result
+                }
+                lastResult = result
+                
+                if (attempt < maxRetries - 1) {
+                    Log.w(TAG, "Command failed (attempt ${attempt + 1}/$maxRetries): $command")
+                    delay(retryDelayMs * (attempt + 1)) // Exponential backoff
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Command execution failed (attempt ${attempt + 1}/$maxRetries)", e)
+                if (attempt < maxRetries - 1) {
+                    delay(retryDelayMs * (attempt + 1))
+                }
+            }
+        }
+        
+        lastResult ?: ShellResult(false, "", "All retries failed", -1)
     }
 
     /**

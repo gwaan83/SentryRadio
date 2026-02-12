@@ -26,6 +26,36 @@ object HttpClientSecurityManager {
     }
 
     /**
+     * Creates a secure OkHttpClient with retry mechanism for critical operations
+     */
+    fun createSecureOkHttpClientWithRetry(
+        maxRetries: Int = 3,
+        retryDelayMs: Long = 1000
+    ): OkHttpClient {
+        return getCachedClient("retry_${maxRetries}") {
+            createBaseClient()
+                .retryOnConnectionFailure(true)
+                .addInterceptor { chain ->
+                    val request = chain.request()
+                    var response = chain.proceed(request)
+                    var retryCount = 0
+                    
+                    while (!response.isSuccessful && retryCount < maxRetries && 
+                           response.code >= 500 && response.code < 600) {
+                        retryCount++
+                        Log.w(TAG, "Request failed with ${response.code}, retry $retryCount/$maxRetries")
+                        response.close()
+                        Thread.sleep(retryDelayMs * retryCount) // Exponential backoff
+                        response = chain.proceed(request)
+                    }
+                    
+                    response
+                }
+                .build()
+        }
+    }
+
+    /**
      * Creates a secure OkHttpClient with custom timeouts and caching.
      */
     fun createSecureOkHttpClientWithTimeout(

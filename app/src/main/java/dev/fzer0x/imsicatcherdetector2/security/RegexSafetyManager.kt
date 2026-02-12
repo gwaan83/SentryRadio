@@ -3,39 +3,59 @@ package dev.fzer0x.imsicatcherdetector2.security
 import android.util.Log
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.Executors
 import java.util.regex.PatternSyntaxException
 
 object RegexSafetyManager {
     private val TAG = "RegexSafety"
-    private const val REGEX_TIMEOUT_MS = 100L // 100ms timeout für Regex-Matching
+    
+    // Centralized timeout configuration
+    private val DEFAULT_TIMEOUT_MS = 100L
+    private val MAX_TIMEOUT_MS = 5000L
+    private val threadPool = java.util.concurrent.Executors.newCachedThreadPool { r ->
+        Thread(r, "RegexSafety-${Thread.currentThread().id}").apply {
+            isDaemon = true
+            priority = Thread.MIN_PRIORITY
+        }
+    }
+    
+    // Thread-safe regex pattern cache
+    private val patternCache = ConcurrentHashMap<String, java.util.regex.Pattern>()
+    private val MAX_CACHE_SIZE = 100
 
-    fun safeRegexMatch(pattern: String, input: String, timeoutMs: Long = REGEX_TIMEOUT_MS): Boolean {
+    fun safeRegexMatch(pattern: String, input: String, timeoutMs: Long = DEFAULT_TIMEOUT_MS): Boolean {
+        val actualTimeout = timeoutMs.coerceIn(1, MAX_TIMEOUT_MS)
+        
         return try {
-            // Validiere Pattern kompiliert werden kann
-            val compiledPattern = java.util.regex.Pattern.compile(pattern)
+            // Get or create compiled pattern from cache
+            val compiledPattern = patternCache.getOrPut(pattern) {
+                if (patternCache.size >= MAX_CACHE_SIZE) {
+                    // Simple cache eviction - remove oldest entries
+                    val keysToRemove = patternCache.keys.take(10)
+                    keysToRemove.forEach { key -> patternCache.remove(key) }
+                }
+                java.util.regex.Pattern.compile(pattern)
+            }
 
-            // Führe Match mit Timeout aus
-            val result = CountDownLatch(1)
-            var matched = false
-
-            val thread = Thread {
+            // Execute match with timeout using thread pool
+            val future = threadPool.submit<Boolean> {
                 try {
-                    matched = compiledPattern.matcher(input).find()
-                    result.countDown()
+                    compiledPattern.matcher(input).find()
                 } catch (e: Exception) {
                     Log.w(TAG, "Regex match error: ${e.message}")
-                    result.countDown()
+                    false
                 }
             }
-            thread.isDaemon = true
-            thread.start()
 
-            // Warte mit Timeout
-            if (result.await(timeoutMs, TimeUnit.MILLISECONDS)) {
-                matched
-            } else {
+            try {
+                future.get(actualTimeout, TimeUnit.MILLISECONDS)
+            } catch (e: java.util.concurrent.TimeoutException) {
+                future.cancel(true)
                 Log.w(TAG, "Regex match timeout for pattern: ${pattern.take(50)}")
-                thread.interrupt()
+                false
+            } catch (e: Exception) {
+                Log.e(TAG, "Regex execution error: ${e.message}")
                 false
             }
         } catch (e: PatternSyntaxException) {
@@ -47,33 +67,38 @@ object RegexSafetyManager {
         }
     }
 
-    fun safeRegexExtract(pattern: String, input: String, group: Int = 1, timeoutMs: Long = REGEX_TIMEOUT_MS): String? {
+    fun safeRegexExtract(pattern: String, input: String, group: Int = 1, timeoutMs: Long = DEFAULT_TIMEOUT_MS): String? {
+        val actualTimeout = timeoutMs.coerceIn(1, MAX_TIMEOUT_MS)
+        
         return try {
-            val compiledPattern = java.util.regex.Pattern.compile(pattern)
+            val compiledPattern = patternCache.getOrPut(pattern) {
+                if (patternCache.size >= MAX_CACHE_SIZE) {
+                    val keysToRemove = patternCache.keys.take(10)
+                    keysToRemove.forEach { key -> patternCache.remove(key) }
+                }
+                java.util.regex.Pattern.compile(pattern)
+            }
 
-            val result = CountDownLatch(1)
-            var extracted: String? = null
-
-            val thread = Thread {
+            val future = threadPool.submit<String?> {
                 try {
                     val matcher = compiledPattern.matcher(input)
                     if (matcher.find() && group <= matcher.groupCount()) {
-                        extracted = matcher.group(group)
-                    }
-                    result.countDown()
+                        matcher.group(group)
+                    } else null
                 } catch (e: Exception) {
                     Log.w(TAG, "Regex extract error: ${e.message}")
-                    result.countDown()
+                    null
                 }
             }
-            thread.isDaemon = true
-            thread.start()
 
-            if (result.await(timeoutMs, TimeUnit.MILLISECONDS)) {
-                extracted
-            } else {
+            try {
+                future.get(actualTimeout, TimeUnit.MILLISECONDS)
+            } catch (e: java.util.concurrent.TimeoutException) {
+                future.cancel(true)
                 Log.w(TAG, "Regex extract timeout")
-                thread.interrupt()
+                null
+            } catch (e: Exception) {
+                Log.e(TAG, "Regex extract error: ${e.message}")
                 null
             }
         } catch (e: Exception) {
@@ -83,7 +108,22 @@ object RegexSafetyManager {
     }
 
     fun sanitizeForRegex(input: String): String {
-        // Escape special regex characters
         return java.util.regex.Pattern.quote(input)
+    }
+    
+    /**
+     * Clear pattern cache and shutdown thread pool
+     */
+    fun cleanup() {
+        patternCache.clear()
+        threadPool.shutdown()
+        try {
+            if (!threadPool.awaitTermination(5, TimeUnit.SECONDS)) {
+                threadPool.shutdownNow()
+            }
+        } catch (e: InterruptedException) {
+            threadPool.shutdownNow()
+            Thread.currentThread().interrupt()
+        }
     }
 }

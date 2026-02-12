@@ -4,10 +4,15 @@ import android.util.Log
 import java.io.BufferedReader
 import java.io.InputStream
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicInteger
 
 object ProcessSafetyManager {
     private val TAG = "ProcessSafety"
     private const val PROCESS_TIMEOUT_SEC = 5L
+    private val MAX_CONCURRENT_PROCESSES = 10
+    private val activeProcesses = ConcurrentHashMap<String, Process>()
+    private val processCounter = AtomicInteger(0)
 
     data class ProcessResult(
         val success: Boolean,
@@ -19,8 +24,19 @@ object ProcessSafetyManager {
         command: Array<String>,
         timeoutSec: Long = PROCESS_TIMEOUT_SEC
     ): ProcessResult {
+        val processId = "proc_${processCounter.incrementAndGet()}"
+        
+        // Check concurrent process limit
+        if (activeProcesses.size >= MAX_CONCURRENT_PROCESSES) {
+            Log.w(TAG, "Too many concurrent processes, rejecting new command")
+            return ProcessResult(false, "", "Process limit exceeded")
+        }
+        
+        var process: Process? = null
+        
         return try {
-            val process = Runtime.getRuntime().exec(command)
+            process = Runtime.getRuntime().exec(command)
+            activeProcesses[processId] = process
 
             // Create threads to read output and error streams
             val outputBuilder = StringBuilder()
@@ -53,10 +69,10 @@ object ProcessSafetyManager {
             val completed = process.waitFor(timeoutSec, TimeUnit.SECONDS)
 
             if (!completed) {
-                process.destroyForcibly()
+                Log.w(TAG, "Process timeout after ${timeoutSec}s for command: ${command.joinToString(" ")}")
+                destroyProcessSafely(process)
                 outputThread.interrupt()
                 errorThread.interrupt()
-                Log.w(TAG, "Process timeout after ${timeoutSec}s for command: ${command.joinToString(" ")}")
                 return ProcessResult(false, "", "Process timeout")
             }
 
@@ -73,6 +89,10 @@ object ProcessSafetyManager {
         } catch (e: Exception) {
             Log.e(TAG, "Error executing command: ${e.message}")
             ProcessResult(false, "", e.message)
+        } finally {
+            // Cleanup
+            activeProcesses.remove(processId)
+            destroyProcessSafely(process)
         }
     }
 
@@ -94,4 +114,32 @@ object ProcessSafetyManager {
             Log.w(TAG, "Error destroying process: ${e.message}")
         }
     }
+    
+    /**
+     * Force cleanup of all active processes
+     */
+    fun forceCleanupAllProcesses() {
+        Log.w(TAG, "Force cleaning up ${activeProcesses.size} active processes")
+        activeProcesses.values.forEach { process ->
+            destroyProcessSafely(process)
+        }
+        activeProcesses.clear()
+    }
+    
+    /**
+     * Get current process statistics
+     */
+    fun getProcessStats(): ProcessStats {
+        return ProcessStats(
+            activeProcessCount = activeProcesses.size,
+            maxConcurrentProcesses = MAX_CONCURRENT_PROCESSES,
+            totalProcessesCreated = processCounter.get()
+        )
+    }
 }
+
+data class ProcessStats(
+    val activeProcessCount: Int,
+    val maxConcurrentProcesses: Int,
+    val totalProcessesCreated: Int
+)

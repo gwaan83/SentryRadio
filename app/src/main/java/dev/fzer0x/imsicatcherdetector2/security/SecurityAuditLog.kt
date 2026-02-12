@@ -14,6 +14,8 @@ object SecurityAuditLog {
     private val TAG = "SecurityAudit"
     private val auditQueue = ConcurrentLinkedQueue<AuditEntry>()
     private val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.US)
+    private val MAX_QUEUE_SIZE = 10000
+    private val CLEANUP_THRESHOLD = 8000
 
     data class AuditEntry(
         val timestamp: Long = System.currentTimeMillis(),
@@ -78,9 +80,14 @@ object SecurityAuditLog {
 
             auditQueue.offer(entry)
 
-            // Limit queue size
-            if (auditQueue.size > SecurityConfig.AUDIT_LOG_MAX_ENTRIES) {
-                auditQueue.poll()
+            // Enhanced queue management with cleanup
+            if (auditQueue.size > MAX_QUEUE_SIZE) {
+                // Remove oldest entries to prevent memory issues
+                val removeCount = auditQueue.size - CLEANUP_THRESHOLD
+                repeat(removeCount) {
+                    auditQueue.poll()
+                }
+                Log.w(TAG, "Audit queue cleanup: removed $removeCount old entries")
             }
 
             // Log to Android Log based on severity

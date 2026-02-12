@@ -24,7 +24,9 @@ import de.robv.android.xposed.IXposedHookLoadPackage
 import de.robv.android.xposed.XC_MethodHook
 import de.robv.android.xposed.XposedBridge
 import de.robv.android.xposed.XposedHelpers
+import de.robv.android.xposed.callbacks.XC_LoadPackage
 import de.robv.android.xposed.callbacks.XC_LoadPackage.LoadPackageParam
+import java.util.concurrent.atomic.AtomicReference
 
 class SentryHook : IXposedHookLoadPackage {
 
@@ -35,10 +37,8 @@ class SentryHook : IXposedHookLoadPackage {
     private val KEY_BLOCK_GSM = "block_gsm"
     private val KEY_REJECT_A50 = "reject_a50"
 
-    @Volatile
-    private var blockGsm = false
-    @Volatile
-    private var rejectA50 = false
+    private val blockGsm = AtomicReference(false)
+    private val rejectA50 = AtomicReference(false)
 
     private var settingsContext: Context? = null
     
@@ -74,9 +74,9 @@ class SentryHook : IXposedHookLoadPackage {
                     settingsContext = context
                     try {
                         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-                        blockGsm = prefs.getBoolean(KEY_BLOCK_GSM, false)
-                        rejectA50 = prefs.getBoolean(KEY_REJECT_A50, false)
-                        XposedBridge.log("SentryHook: Settings loaded from SharedPreferences - BlockGSM: $blockGsm, RejectA50: $rejectA50")
+                        blockGsm.set(prefs.getBoolean(KEY_BLOCK_GSM, false))
+                        rejectA50.set(prefs.getBoolean(KEY_REJECT_A50, false))
+                        XposedBridge.log("SentryHook: Settings loaded from SharedPreferences - BlockGSM: ${blockGsm.get()}, RejectA50: ${rejectA50.get()}")
                     } catch (e: Exception) {
                         XposedBridge.log("SentryHook: Failed to load settings from SharedPreferences: ${e.message}")
                     }
@@ -96,16 +96,16 @@ class SentryHook : IXposedHookLoadPackage {
                     val filter = IntentFilter(ACTION_SETTINGS_CHANGED)
                     context.registerReceiver(object : BroadcastReceiver() {
                         override fun onReceive(ctx: Context, intent: Intent) {
-                            blockGsm = intent.getBooleanExtra("blockGsm", false)
-                            rejectA50 = intent.getBooleanExtra("rejectA50", false)
+                            blockGsm.set(intent.getBooleanExtra("blockGsm", false))
+                            rejectA50.set(intent.getBooleanExtra("rejectA50", false))
                             try {
                                 val prefs = ctx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
                                 prefs.edit()
-                                    .putBoolean(KEY_BLOCK_GSM, blockGsm)
-                                    .putBoolean(KEY_REJECT_A50, rejectA50)
+                                    .putBoolean(KEY_BLOCK_GSM, blockGsm.get())
+                                    .putBoolean(KEY_REJECT_A50, rejectA50.get())
                                     .apply()
                             } catch (e: Exception) {}
-                            XposedBridge.log("SentryHook: Settings updated & persisted - BlockGSM: $blockGsm, RejectA50: $rejectA50")
+                            XposedBridge.log("SentryHook: Settings updated & persisted - BlockGSM: ${blockGsm.get()}, RejectA50: ${rejectA50.get()}")
                         }
                     }, filter, Context.RECEIVER_EXPORTED)
                 }
@@ -165,7 +165,7 @@ class SentryHook : IXposedHookLoadPackage {
                         }
                         sendForensicBroadcast(context, intent)
 
-                        if (rejectA50) {
+                        if (rejectA50.get()) {
                             XposedBridge.log("SentryHook: SECURITY POLICY - Initiating controlled disconnect & reconnect to prevent A5/0 exploit.")
                             
                             // Extract SIM slot from context or use default
@@ -273,7 +273,7 @@ class SentryHook : IXposedHookLoadPackage {
                         }
                     }
 
-                    if (blockGsm && isGsmRat(ss)) {
+                    if (blockGsm.get() && isGsmRat(ss)) {
                         XposedBridge.log("SentryHook: GSM Detected - Blocking GSM connection on SIM $simSlot")
 
                         // Method 1: Set OUT_OF_SERVICE
