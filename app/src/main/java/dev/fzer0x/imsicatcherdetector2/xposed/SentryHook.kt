@@ -198,10 +198,14 @@ class SentryHook : IXposedHookLoadPackage {
                                 // Use subscription manager to get SIM slot info
                                 val subscriptionManager = context.getSystemService(Context.TELEPHONY_SUBSCRIPTION_SERVICE) as SubscriptionManager
                                 val activeSubscription = try {
-                                subscriptionManager.activeSubscriptionInfoList?.firstOrNull()
-                            } catch (e: Exception) {
-                                null
-                            }
+                                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP_MR1) {
+                                        subscriptionManager.activeSubscriptionInfoList?.firstOrNull()
+                                    } else {
+                                        null
+                                    }
+                                } catch (e: Exception) {
+                                    null
+                                }
                                 activeSubscription?.simSlotIndex ?: 0
                             } catch (e: Exception) {
                                 0 // Default to SIM 0 if extraction fails

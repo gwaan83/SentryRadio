@@ -159,10 +159,33 @@ class ForensicViewModel(application: Application) : AndroidViewModel(application
         _blockedCellIds
     ) { logs, currentSettings, blockedIds ->
         var filtered = logs
-        if (!currentSettings.showBlockedEvents) filtered = filtered.filter { event -> event.cellId == null || !blockedIds.contains(event.cellId) }
-        if (!currentSettings.logRadioMetrics) filtered = filtered.filter { event -> event.type != EventType.RADIO_METRICS_UPDATE }
-        if (!currentSettings.logSuspiciousEvents) filtered = filtered.filter { event -> event.severity !in 5..7 }
-        if (!currentSettings.logRootFeed) filtered = filtered.filter { event -> !event.description.contains("Signal Feed") }
+        
+        // Apply each filter independently - each option only removes its specific event type
+        filtered = filtered.filter { event ->
+            var shouldInclude = true
+            
+            // Filter radio metrics if option is disabled
+            if (!currentSettings.logRadioMetrics && event.type == EventType.RADIO_METRICS_UPDATE) {
+                shouldInclude = false
+            }
+            
+            // Filter suspicious events (severity 8-10) if option is disabled
+            if (!currentSettings.logSuspiciousEvents && event.severity in 8..10) {
+                shouldInclude = false
+            }
+            
+            // Filter root signal feed if option is disabled
+            if (!currentSettings.logRootFeed && event.description.contains("Signal Feed")) {
+                shouldInclude = false
+            }
+            
+            // Filter blocked events if option is disabled
+            if (!currentSettings.showBlockedEvents && event.cellId != null && blockedIds.contains(event.cellId)) {
+                shouldInclude = false
+            }
+            
+            shouldInclude
+        }
         filtered.sortedByDescending { event -> event.timestamp }
     }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
@@ -886,18 +909,30 @@ class ForensicViewModel(application: Application) : AndroidViewModel(application
         updateRate = prefs.getInt("update_rate", 15), sensitivity = prefs.getInt("sensitivity", 1), logRootFeed = prefs.getBoolean("log_root_feed", false), logRadioMetrics = prefs.getBoolean("log_radio_metrics", false), logSuspiciousEvents = prefs.getBoolean("log_suspicious_events", false), autoPcap = prefs.getBoolean("auto_pcap", true), alarmSound = prefs.getBoolean("alarm_sound", true), alarmVibe = prefs.getBoolean("alarm_vibe", true), beaconDbKey = encryptedPrefs.getString("beacon_db_key", "") ?: "", openCellIdKey = encryptedPrefs.getString("open_cell_id_key", "") ?: "", useBeaconDb = prefs.getBoolean("use_beacon_db", true), useOpenCellId = prefs.getBoolean("use_open_cell_id", false), showBlockedEvents = prefs.getBoolean("show_blocked_events", false), blockGsm = prefs.getBoolean("block_gsm", false), rejectA50 = prefs.getBoolean("reject_a50", false), markFakeCells = prefs.getBoolean("mark_fake_cells", true), forceLte = prefs.getBoolean("force_lte", false), autoMitigation = prefs.getBoolean("auto_mitigation", false), zeroDayProtection = prefs.getBoolean("zero_day_protection", false), geoFencingProtection = prefs.getBoolean("geo_fencing_protection", false), advancedTelemetry = prefs.getBoolean("advanced_telemetry", false), extendedPanicMode = prefs.getBoolean("extended_panic_mode", false), realTimeModemMonitoring = prefs.getBoolean("real_time_modem_monitoring", false)
     )
 
-    fun updateUseBeaconDb(value: Boolean) { _settings.update { it.copy(useBeaconDb = value) }; prefs.edit { putBoolean("use_beacon_db", value) } }
-    fun updateLogRadioMetrics(value: Boolean) { _settings.update { it.copy(logRadioMetrics = value) }; prefs.edit { putBoolean("log_radio_metrics", value) } }
-    fun updateLogSuspiciousEvents(value: Boolean) { _settings.update { it.copy(logSuspiciousEvents = value) }; prefs.edit { putBoolean("log_suspicious_events", value) } }
-    fun updateLogRootFeed(value: Boolean) { _settings.update { it.copy(logRootFeed = value) }; prefs.edit { putBoolean("log_root_feed", value) } }
-    fun updateShowBlockedEvents(value: Boolean) { _settings.update { it.copy(showBlockedEvents = value) }; prefs.edit { putBoolean("show_blocked_events", value) } }
-    fun updateSensitivity(value: Int) { _settings.update { it.copy(sensitivity = value) }; prefs.edit { putInt("sensitivity", value) } }
-    fun updateBeaconDbKey(key: String) { _settings.update { it.copy(beaconDbKey = key) }; encryptedPrefs.edit { putString("beacon_db_key", key) } }
-    fun updateOpenCellIdKey(key: String) { _settings.update { it.copy(openCellIdKey = key) }; encryptedPrefs.edit { putString("open_cell_id_key", key) } }
-    fun updateUseOpenCellId(value: Boolean) { _settings.update { it.copy(useOpenCellId = value) }; prefs.edit { putBoolean("use_open_cell_id", value) } }
+    fun updateUseBeaconDb(value: Boolean) { _settings.update { it.copy(useBeaconDb = value) }; prefs.edit { putBoolean("use_beacon_db", value).apply() } }
+    fun updateLogRadioMetrics(value: Boolean) { 
+        _settings.update { it.copy(logRadioMetrics = value) }; 
+        prefs.edit { putBoolean("log_radio_metrics", value).apply() }
+    }
+    fun updateLogSuspiciousEvents(value: Boolean) { 
+        _settings.update { it.copy(logSuspiciousEvents = value) }; 
+        prefs.edit { putBoolean("log_suspicious_events", value).apply() }
+    }
+    fun updateLogRootFeed(value: Boolean) { 
+        _settings.update { it.copy(logRootFeed = value) }; 
+        prefs.edit { putBoolean("log_root_feed", value).apply() }
+    }
+    fun updateShowBlockedEvents(value: Boolean) { 
+        _settings.update { it.copy(showBlockedEvents = value) }; 
+        prefs.edit { putBoolean("show_blocked_events", value).apply() }
+    }
+    fun updateSensitivity(value: Int) { _settings.update { it.copy(sensitivity = value) }; prefs.edit { putInt("sensitivity", value).apply() } }
+    fun updateBeaconDbKey(key: String) { _settings.update { it.copy(beaconDbKey = key) }; encryptedPrefs.edit { putString("beacon_db_key", key).apply() } }
+    fun updateOpenCellIdKey(key: String) { _settings.update { it.copy(openCellIdKey = key) }; encryptedPrefs.edit { putString("open_cell_id_key", key).apply() } }
+    fun updateUseOpenCellId(value: Boolean) { _settings.update { it.copy(useOpenCellId = value) }; prefs.edit { putBoolean("use_open_cell_id", value).apply() } }
     fun updateBlockGsm(value: Boolean) { 
         _settings.update { it.copy(blockGsm = value) }; 
-        prefs.edit { putBoolean("block_gsm", value) }; 
+        prefs.edit { putBoolean("block_gsm", value).apply() }; 
         getApplication<Application>().sendBroadcast(Intent("dev.fzer0x.imsicatcherdetector2.SETTINGS_CHANGED").apply { putExtra("blockGsm", value); putExtra("reject_a50", _settings.value.rejectA50) })
         
         // Hardware-level GSM blocking via sentry-ctl
@@ -917,7 +952,7 @@ class ForensicViewModel(application: Application) : AndroidViewModel(application
     }
     fun updateRejectA50(value: Boolean) { 
         _settings.update { it.copy(rejectA50 = value) }; 
-        prefs.edit { putBoolean("reject_a50", value) }; 
+        prefs.edit { putBoolean("reject_a50", value).apply() }; 
         getApplication<Application>().sendBroadcast(Intent("dev.fzer0x.imsicatcherdetector2.SETTINGS_CHANGED").apply { putExtra("blockGsm", _settings.value.blockGsm); putExtra("reject_a50", value) })
         
         // Hardware-level A5/0 cipher rejection via sentry-ctl
@@ -935,10 +970,10 @@ class ForensicViewModel(application: Application) : AndroidViewModel(application
             }
         }
     }
-    fun updateMarkFakeCells(value: Boolean) { _settings.update { it.copy(markFakeCells = value) }; prefs.edit { putBoolean("mark_fake_cells", value) } }
+    fun updateMarkFakeCells(value: Boolean) { _settings.update { it.copy(markFakeCells = value) }; prefs.edit { putBoolean("mark_fake_cells", value).apply() } }
     fun updateForceLte(value: Boolean) { 
         _settings.update { it.copy(forceLte = value) }; 
-        prefs.edit { putBoolean("force_lte", value) }
+        prefs.edit { putBoolean("force_lte", value).apply() }
         
         // Hardware-level LTE forcing via sentry-ctl
         if (_dashboardState.value.isHardeningModuleActive) {
